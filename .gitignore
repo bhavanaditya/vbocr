@@ -21,3 +21,6 @@ bin/
 obj/
 *.user
 .vs/
+
+# Downloaded OCR models
+models/

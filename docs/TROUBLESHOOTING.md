@@ -53,9 +53,9 @@ Install the **Microsoft Visual C++ Redistributable (x64)**:
 
 Another program is using port 5000, or the server is already running (for example started by
 the VB.NET app or Task Scheduler). Either stop the other copy, or change `server.port` in
-`config\settings.yaml` and use the same port in `New OcrClient("http://127.0.0.1:5001")`.
+`config\settings.yaml` and use the same port in `New VbOcrClient("http://127.0.0.1:5001")`.
 
-### `EnsureServerRunningAsync` returns False
+### `EnsureServerRunning` returns False / "The VB OCR server did not start"
 
 Run `start-server.bat` by hand to see the error message in the window.
 

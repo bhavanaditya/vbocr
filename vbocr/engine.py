@@ -3,12 +3,19 @@
 import logging
 import os
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .models import Page, Word
 
 log = logging.getLogger(__name__)
 
+# Keep the models inside the install folder (not the user profile), so the server works
+# for every Windows user on the PC and offline. Must be set before paddleocr is imported.
+os.environ.setdefault(
+    "PADDLE_PDX_CACHE_HOME",
+    str(Path(__file__).resolve().parent.parent / "models"),
+)
 # Skip PaddleX's online model-host check on every start; models are cached locally.
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 

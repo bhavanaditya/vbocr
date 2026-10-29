@@ -58,22 +58,30 @@ Full instructions: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
 ## Use from VB.NET
 
-Copy [`clients/vbnet/OcrClient.vb`](clients/vbnet/OcrClient.vb) into your project:
+Works with existing applications: Visual Studio 2005+ (including 2017), .NET Framework 2.0+
+(including 4.5), `Option Strict On`, x86/x64/AnyCPU, with no extra references or NuGet packages.
+
+Add [`clients/vbnet/VbOcrClient.vb`](clients/vbnet/VbOcrClient.vb) and
+[`clients/vbnet/VbOcrScanForm.vb`](clients/vbnet/VbOcrScanForm.vb) to your project, then:
 
 ```vb
-Using client As New OcrClient()
-    Await client.EnsureServerRunningAsync("C:\vbocr")
-    Dim result = Await client.ScanAsync("C:\Invoices\bill.jpg")
-    Dim invoice = InvoiceCsv.Parse(result.Csv)
-
-    Dim invoiceNo = invoice.Header("Invoice Number")
-    For Each row As DataRow In invoice.Items.Rows
-        Debug.Print(row("SKU No./Item ID.") & "  " & row("Quantity") & "  " & row("Amount"))
-    Next
+Using dlg As New VbOcrScanForm()
+    If dlg.ShowDialog(Me) = DialogResult.OK Then
+        Dim invoice As VbOcrInvoice = dlg.Invoice
+        Dim invoiceNo As String = invoice.GetHeader("Invoice Number")
+        For Each row As DataRow In invoice.Items.Rows
+            Dim qty As Decimal = VbOcrInvoice.ToDecimal(row("Quantity"))
+            ' ... save to your database
+        Next
+    End If
 End Using
 ```
 
-Full guide: [docs/VBNET_INTEGRATION.md](docs/VBNET_INTEGRATION.md)
+The dialog starts the OCR server if needed, scans in the background and lets the user correct
+values before saving.
+
+- Step-by-step for an existing app: [docs/INTEGRATE_EXISTING_APP.md](docs/INTEGRATE_EXISTING_APP.md)
+- Client reference: [docs/VBNET_INTEGRATION.md](docs/VBNET_INTEGRATION.md)
 
 ## Use from the command line
 
@@ -89,7 +97,8 @@ This writes `C:\Invoices\bill.csv`. More options are in [docs/USAGE.md](docs/USA
 |---|---|
 | [INSTALLATION.md](docs/INSTALLATION.md) | Requirements, step-by-step install, running at Windows start-up, updating, uninstalling |
 | [USAGE.md](docs/USAGE.md) | Browser test page, command line, HTTP API reference |
-| [VBNET_INTEGRATION.md](docs/VBNET_INTEGRATION.md) | Calling VB OCR from a VB.NET application |
+| [INTEGRATE_EXISTING_APP.md](docs/INTEGRATE_EXISTING_APP.md) | **Step-by-step: add a Scan Invoice button to an existing VB.NET app** |
+| [VBNET_INTEGRATION.md](docs/VBNET_INTEGRATION.md) | VB.NET client reference: dialog, `VbOcrClient`, `VbOcrInvoice` |
 | [OUTPUT_FORMAT.md](docs/OUTPUT_FORMAT.md) | CSV and JSON layout, where each value comes from |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | `settings.yaml`: OCR model, date format, column names |
 | [ADDING_SUPPLIERS.md](docs/ADDING_SUPPLIERS.md) | Handling a new supplier's invoice format |

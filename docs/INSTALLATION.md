@@ -75,7 +75,7 @@ The installer:
 1. finds Python 3.10–3.13
 2. creates a private Python environment in `C:\vbocr\.venv`, so your other Python programs are not affected
 3. installs PaddleOCR, PaddlePaddle, FastAPI, Uvicorn and PyYAML
-4. downloads the OCR models to `%USERPROFILE%\.paddlex\official_models`
+4. downloads the OCR models to `C:\vbocr\models`, so every Windows user on the PC can use them offline
 
 It finishes with:
 
@@ -116,7 +116,7 @@ scan.bat C:\Invoices\bill.jpg
 You can start the server yourself, let the VB.NET app start it, or have Windows start it at log-on.
 
 **Option A: let the VB.NET application start it.**
-`OcrClient.EnsureServerRunningAsync("C:\vbocr")` starts the server in the background
+The scan dialog (`VbOcrScanForm`) and `VbOcrClient.EnsureServerRunning("C:\vbocr")` start the server in the background
 when it is not running. See [VBNET_INTEGRATION.md](VBNET_INTEGRATION.md). This is the simplest option.
 
 **Option B: start at Windows log-on with Task Scheduler.**
@@ -153,7 +153,7 @@ To run VB OCR on one PC and scan from several PCs:
    ```
 
 3. In the VB.NET app, use the server PC's address:
-   `New OcrClient("http://192.168.1.20:5000")`
+   `New VbOcrClient("http://192.168.1.20:5000")` (or set `ServerUrl` on `VbOcrScanForm`)
 
 > The server has no login. Only open it on a trusted office network, never to the internet.
 
@@ -172,8 +172,7 @@ If you used the ZIP download, extract the new ZIP over the old folder. **Keep yo
 
 1. Stop the server (close its window, or end `pythonw.exe` in Task Manager).
 2. Delete `C:\vbocr`.
-3. Delete `%USERPROFILE%\.paddlex` (the downloaded models).
-4. Remove the Task Scheduler task if you created one.
+3. Remove the Task Scheduler task if you created one.
 
 ## macOS / Linux (for development)
 

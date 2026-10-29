@@ -22,7 +22,8 @@ vbocr/
 │   ├── config.py         loads the YAML files
 │   ├── models.py         data classes
 │   └── text_utils.py     number / date clean-up
-├── clients/vbnet/                             VB.NET client and example form
+├── clients/vbnet/                             VB.NET client and scan dialog
+├── models/                                    downloaded OCR models (git-ignored)
 ├── tests/                                     tests (no OCR engine needed)
 └── docs/
 ```
