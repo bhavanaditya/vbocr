@@ -1,0 +1,11 @@
+# OCR engine (Apache-2.0)
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+
+# HTTP server (MIT / BSD)
+fastapi>=0.115,<1.0
+uvicorn>=0.30
+python-multipart>=0.0.9
+
+# Config files (MIT)
+PyYAML>=6.0

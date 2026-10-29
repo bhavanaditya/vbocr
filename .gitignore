@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Output and test files - invoices contain business data, keep them out of git
+*.csv
+samples/
+output/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# VB.NET build output
+bin/
+obj/
+*.user
+.vs/

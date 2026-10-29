@@ -1,0 +1,78 @@
+# VB OCR settings
+# Edit this file to change how invoices are read and how the CSV is written.
+# Restart the server after saving changes.
+
+server:
+  host: 127.0.0.1      # use 0.0.0.0 to allow other computers on the network
+  port: 5000
+
+ocr:
+  # Passed straight to PaddleOCR. See docs/CONFIGURATION.md for details.
+  lang: en
+  # Model size: small = fast (default), medium = most accurate (about 2x slower).
+  # Do not use tiny - it misreads numbers on invoices.
+  text_detection_model_name: PP-OCRv6_small_det
+  text_recognition_model_name: PP-OCRv6_small_rec
+  use_doc_orientation_classify: true   # fixes photos taken sideways / upside down
+  use_doc_unwarping: false             # set true for curled or folded paper (slower)
+  use_textline_orientation: true
+
+output:
+  date_format: "%d-%m-%Y"     # 03-01-2026. Use "%d/%m/%Y" for 03/01/2026
+  include_total_row: true
+  fill_date_with_today: false # put today's date in the "Date" column
+  # Column used for the item quantity when the invoice has several.
+  # The first header found wins.
+  quantity_priority: ["total qty", "qty", "quantity", "mtrs", "meters", "pcs", "nos"]
+  # Column used for the item amount. "total" is the line total incl. GST.
+  amount_priority: ["total", "total amt", "total amount", "net amount", "amount", "value", "taxable value"]
+
+# Labels printed next to header values on the invoice.
+# Matching ignores case, spaces and punctuation at the end of the label.
+header_fields:
+  invoice_number: ["invoice no", "invoice number", "inv no", "bill no", "ref no"]
+  invoice_date: ["invoice date", "inv date", "bill date", "ref date", "dated"]
+  po_number: ["po no", "p o no", "po number", "order no", "purchase order no"]
+  po_date: ["po date", "p o date", "order date", "purchase order date"]
+  lr_booking_date: ["lr date", "l r date", "lr no & date", "lr no and date", "lr booking date"]
+  brand: ["brand"]
+
+# Table header names that map to each CSV column.
+item_columns:
+  serial: ["s.no", "s no", "sl.no", "sl no", "sr.no", "sr no", "sno", "slno", "srno", "#"]
+  sku: ["item", "item code", "item id", "sku", "sku no", "product code", "code", "style code"]
+  description: ["description of goods", "description", "particulars", "item description", "item name"]
+  article_id: ["article", "article id", "article no", "art no"]
+  brand: ["brand", "brand name"]
+  design_name: ["design", "design name", "product", "product name", "style"]
+  size: ["size"]
+  cup_size: ["cup size", "cup"]
+  colour: ["colour", "color", "shade"]
+  cost_price: ["ws price", "rate", "cost price", "cost", "price", "unit price", "rate per unit"]
+  mrp: ["mrp", "m.r.p", "m r p"]
+
+# Tried in order on the item description. Named groups fill CSV columns
+# (brand, design_name, article_id, sku, size, colour).
+# Example: RAYMOND/CLASSIQUE/1315177 -> brand RAYMOND, design CLASSIQUE, article 1315177
+description_patterns:
+  - '^(?P<brand>[^/]+)/(?P<design_name>.+)/(?P<article_id>[^/]+)$'
+
+# Colour codes found at the end of SKU codes (used when a supplier sets
+# colour_from_sku_suffix in suppliers.yaml).
+colour_codes:
+  BLK: Black
+  BLU: Blue
+  BRN: Brown
+  GRN: Green
+  GRY: Grey
+  MRN: Maroon
+  MST: Mustard
+  NVY: Navy
+  ORG: Orange
+  PNK: Pink
+  PUR: Purple
+  RED: Red
+  RST: Rust
+  TUR: Turquoise
+  WHT: White
+  YLW: Yellow

@@ -1,0 +1,30 @@
+# Supplier profiles
+#
+# A profile is optional. Invoices from unknown suppliers are still read
+# using settings.yaml. Add a profile when a supplier needs special handling.
+#
+# Fields:
+#   name                   Supplier name written to the CSV
+#   match                  Text that identifies the supplier (any one is enough,
+#                          case-insensitive). Use something unique such as the
+#                          supplier's GSTIN, e-mail or website.
+#   brand                  Default brand for every item
+#   header_fields          Extra labels for header values (added before the
+#                          defaults from settings.yaml)
+#   item_columns           Extra table header names (added before the defaults)
+#   colour_from_sku_suffix Number of letters at the end of the SKU that hold a
+#                          colour code (see colour_codes in settings.yaml)
+#   description_patterns   Extra patterns for splitting the item description
+#
+# See docs/ADDING_SUPPLIERS.md for a step-by-step guide.
+
+suppliers:
+  - name: Opus Fashions Private Limited
+    match: ["opus fashions", "maybellindia"]
+    brand: Maybell
+    header_fields:
+      po_date: ["date"]          # "Date" printed under "PO No"
+    colour_from_sku_suffix: 3    # NTY03140125MST -> MST -> Mustard
+
+  - name: Sri Venkateshwara Textiles
+    match: ["svtmagadiroad", "wholesale dealers in suitings"]
