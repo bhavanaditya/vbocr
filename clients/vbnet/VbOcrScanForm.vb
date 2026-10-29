@@ -2,7 +2,7 @@
 '
 ' The whole form is built in code (no .Designer.vb / .resx), so the file can be added to
 ' any existing WinForms project. Same compatibility as VbOcrClient.vb
-' (Visual Studio 2005+, .NET Framework 2.0+ or .NET 6/8 Windows).
+' (Visual Studio 2008+, .NET Framework 2.0+ or .NET 6/8 Windows).
 '
 ' Use:
 '     Using dlg As New VbOcrScanForm()

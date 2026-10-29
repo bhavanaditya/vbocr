@@ -58,7 +58,7 @@ Full instructions: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
 ## Use from VB.NET
 
-Works with existing applications: Visual Studio 2005+ (including 2017), .NET Framework 2.0+
+Works with existing applications: Visual Studio 2008+ (including 2017), .NET Framework 2.0+
 (including 4.5), `Option Strict On`, x86/x64/AnyCPU, with no extra references or NuGet packages.
 
 Add [`clients/vbnet/VbOcrClient.vb`](clients/vbnet/VbOcrClient.vb) and

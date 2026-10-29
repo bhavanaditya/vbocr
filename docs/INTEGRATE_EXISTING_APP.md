@@ -1,7 +1,8 @@
 # Step-by-step: add invoice scanning to your existing VB.NET application
 
 This guide is written for an application built with **Visual Studio 2017** on
-**.NET Framework 4.5**. It works the same way for other versions (VS 2005+, .NET 2.0+).
+**.NET Framework 4.5**. It works the same way for other versions (VS 2008+, .NET 2.0+); the
+code samples split long lines without `_`, which needs VS 2010 or later.
 
 At the end, your purchase-entry screen will have a **Scan Invoice** button that:
 

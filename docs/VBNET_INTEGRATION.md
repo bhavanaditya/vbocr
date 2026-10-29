@@ -12,12 +12,23 @@ button to an existing application, see [INTEGRATE_EXISTING_APP.md](INTEGRATE_EXI
 
 | | Supported |
 |---|---|
-| Visual Studio | 2005 or later, including **VS 2017** |
+| Visual Studio | 2008 or later, including **VS 2017** |
 | .NET | Framework **2.0 – 4.8**, including **4.5**, and .NET 6 / 8 for Windows |
 | Project settings | `Option Strict On` or Off, `Option Infer` On or Off |
 | Platform | x86, x64 or AnyCPU. The OCR runs in its own process, so your app's bitness does not matter |
 | References | None to add. Uses only `System`, `System.Data`, `System.Windows.Forms`, `System.Drawing` and `Microsoft.VisualBasic`, which every WinForms project already has |
 | NuGet packages | None |
+
+**Verified:**
+
+- Both files and all code samples from these guides compile with **0 errors and 0 warnings** for
+  .NET Framework 4.5 / VB 15 (Visual Studio 2017) with `Option Strict On`, `Option Infer Off`,
+  warnings treated as errors and an x86 target. They also compile for .NET Framework 2.0 / VB 9 (VS 2008).
+- `VbOcrClient` and `VbOcrInvoice` were run against a live VB OCR server: scanning, multi-page
+  scans, error messages, CSV parsing and write-back, and number/date conversion on a PC set to a
+  German number format (`,` as the decimal point).
+- The dialog (`VbOcrScanForm`) compiles but has not been opened on Windows yet. Try it once
+  during the test step.
 
 All class names start with `VbOcr`, so they will not clash with classes already in your project.
 The files have no `Namespace`, so they end up in your project's root namespace.

@@ -1,7 +1,7 @@
 ' VB OCR client for VB.NET applications
 '
 ' Compatible with:
-'   - Visual Studio 2005 or later
+'   - Visual Studio 2008 or later
 '   - .NET Framework 2.0 or later, and .NET 6 / 8 (Windows)
 '   - Option Strict On, Option Explicit On, Option Infer On or Off
 '   - x86, x64 and AnyCPU builds (the OCR runs in its own process)
