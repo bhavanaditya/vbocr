@@ -93,7 +93,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if invoice.warnings:
             headers["X-VBOCR-Warnings"] = " | ".join(invoice.warnings)
         if format == "json":
-            return JSONResponse(invoice.to_dict(), headers=headers)
+            body = invoice.to_dict()
+            body["csv"] = scanner.to_csv(invoice)
+            return JSONResponse(body, headers=headers)
         headers["Content-Disposition"] = 'attachment; filename="invoice.csv"'
         return Response(scanner.to_csv(invoice), media_type="text/csv; charset=utf-8", headers=headers)
 

@@ -22,11 +22,11 @@ There are three ways to scan invoices:
 
 | How | Browser page | VB.NET dialog | Command line |
 |---|---|---|---|
-| Choose one or more files | **Choose files...** | **Add files...** | `scan.bat a.jpg b.png` |
-| A whole folder | **Choose folder...** or drop the folder | **Add folder...** or drop the folder | `scan.bat C:\Invoices` or `scan-folder.bat C:\Invoices` |
-| Drag and drop | Drop on the dashed box | Drop on the page list | Drop files on `scan.bat` in Explorer |
+| Choose one or more files | **Files** | **Files...** | `scan.bat a.jpg b.png` |
+| A whole folder | **Folder** or drop the folder | **Folder...** or drop the folder | `scan.bat C:\Invoices` or `scan-folder.bat C:\Invoices` |
+| Drag and drop | Drop anywhere on the page | Drop on the page list or the dashed box | Drop files on `scan.bat` in Explorer |
 | Paste from the clipboard (screenshot, image copied from WhatsApp / browser) | Ctrl+V | **Paste** button or Ctrl+V | — |
-| Phone camera | **Take photo** (when the page is opened on a phone on the same network) | — | — |
+| Phone camera | **Camera** (when the page is opened on a phone on the same network) | — | — |
 | Wildcards | — | — | `scan.bat "C:\Invoices\*.png" --each` |
 
 **One invoice or many?** Several files can mean two things:
@@ -54,11 +54,15 @@ See [CONFIGURATION.md](CONFIGURATION.md#ocr-model-size) to trade speed against a
 
 1. Start the server: `start-server.bat`
 2. Open <http://127.0.0.1:5000>
-3. Add the files: **Choose files...**, **Choose folder...**, **Take photo**, drag and drop, or paste an
-   image with Ctrl+V. Change the order with the arrows, remove files with ✕.
+3. Add the files: **Files**, **Folder**, **Camera**, drag and drop, or paste an image with Ctrl+V.
+   Change the order with the arrows or by dragging a page, remove pages with ✕.
 4. Choose whether the files are **pages of one invoice** or **separate invoices**.
-5. Pick **Download CSV** or **Show on this page**, and click **Scan**.
-   Separate invoices with CSV download as `invoices.zip`, with one CSV per file.
+5. Click **Scan**. The results appear on the right: item count, total quantity and total amount,
+   the invoice details, the item table and anything to check. Use **Download CSV** or **Copy**
+   (paste straight into Excel) on each invoice, or **Download all (ZIP)** for separate invoices.
+
+The status in the top right shows whether the server is **Ready**, still **Loading** the OCR
+engine, or **offline**. The page follows the Windows light / dark setting.
 
 ## 2. Command line
 
@@ -208,11 +212,12 @@ curl -F "files=@bill1.jpg" -F "files=@bill2.png" "http://127.0.0.1:5000/scan?mod
     }
   ],
   "supplier_profile": "Sample Garments Pvt Ltd",
-  "warnings": []
+  "warnings": [],
+  "csv": ",Date,Supplier Name,..."
 }
 ```
 
 `supplier_profile` is the name of the matching profile in `config/suppliers.yaml`, or empty when the
-supplier is unknown. All values are strings. Numbers have thousands separators removed.
+supplier is unknown. `csv` is the same text that `format=csv` returns. All values are strings. Numbers have thousands separators removed.
 
 Interactive API documentation is available at <http://127.0.0.1:5000/docs> while the server is running.

@@ -1,165 +1,520 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VB OCR</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>VB OCR · Invoice to CSV</title>
 <style>
-body{font-family:Segoe UI,Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 16px;color:#222}
-h2{margin-bottom:4px}.muted{color:#666;font-size:14px}
-#drop{border:2px dashed #999;border-radius:8px;padding:28px;text-align:center;margin:16px 0;background:#fafafa}
-#drop.over{border-color:#2563eb;background:#eef4ff}
-.buttons button,.buttons label.btn{display:inline-block;margin:4px;padding:8px 14px;border:1px solid #888;border-radius:4px;background:#fff;cursor:pointer;font:inherit}
+:root{
+  --primary:#4338ca;--primary-hover:#3730a3;--on-primary:#ffffff;--primary-soft:#eef2ff;--primary-ring:rgba(67,56,202,.25);
+  --bg:#f5f6fa;--surface:#ffffff;--surface-2:#f9fafb;--border:#e5e7eb;--border-strong:#d1d5db;
+  --text:#111827;--text-2:#4b5563;--muted:#6b7280;
+  --success:#15803d;--success-soft:#dcfce7;--warning:#b45309;--warning-soft:#fef3c7;--danger:#b91c1c;--danger-soft:#fee2e2;
+  --radius:12px;--shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.08);
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --primary:#818cf8;--primary-hover:#a5b4fc;--on-primary:#0b0f19;--primary-soft:#1e1b4b;--primary-ring:rgba(129,140,248,.35);
+  --bg:#0b0f19;--surface:#111827;--surface-2:#0f1523;--border:#1f2937;--border-strong:#374151;
+  --text:#f3f4f6;--text-2:#d1d5db;--muted:#9ca3af;
+  --success:#4ade80;--success-soft:#052e16;--warning:#fbbf24;--warning-soft:#3b2a06;--danger:#f87171;--danger-soft:#3f0d0d;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;font-size:14px;line-height:1.5;color:var(--text);background:var(--bg)}
+button,input{font:inherit;color:inherit}
+.hidden{display:none!important}
+
+/* Top bar */
+.topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.logo{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;font-weight:700;letter-spacing:.5px}
+.brand b{display:block;font-size:16px}.brand span{color:var(--muted);font-size:12.5px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12.5px;font-weight:600;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.ok .dot{background:var(--success)}.pill.loading .dot{background:var(--warning);animation:pulse 1.2s infinite}.pill.off .dot{background:var(--danger)}
+@keyframes pulse{50%{opacity:.35}}
+.toplink{color:var(--muted);text-decoration:none;font-size:13px}.toplink:hover{color:var(--primary)}
+
+/* Layout */
+.layout{display:grid;grid-template-columns:minmax(340px,420px) 1fr;gap:20px;max-width:1440px;margin:0 auto;padding:20px 24px 40px;align-items:start}
+@media (max-width:960px){.layout{grid-template-columns:1fr;padding:14px}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.panel{padding:18px;position:sticky;top:78px}
+@media (max-width:960px){.panel{position:static}}
+.step{display:flex;align-items:center;gap:8px;margin:18px 0 10px;font-weight:600}
+.step:first-child{margin-top:0}
+.step i{font-style:normal;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;background:var(--primary-soft);color:var(--primary)}
+
+/* Drop zone */
+.drop{border:2px dashed var(--border-strong);border-radius:var(--radius);padding:22px 16px;text-align:center;background:var(--surface-2);transition:.15s}
+.drop.over{border-color:var(--primary);background:var(--primary-soft);transform:scale(1.01)}
+.drop svg{color:var(--primary)}
+.drop h3{margin:6px 0 2px;font-size:15px}
+.drop p{margin:0 0 12px;color:var(--muted);font-size:13px}
+kbd{font-family:var(--mono);font-size:11.5px;padding:1px 5px;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:4px;background:var(--surface)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);cursor:pointer;font-weight:600;font-size:13px;text-decoration:none;transition:background .12s,border-color .12s}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn:focus-visible,.seg button:focus-visible,.icon:focus-visible{outline:none;box-shadow:0 0 0 3px var(--primary-ring)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.primary:hover{background:var(--primary-hover);color:var(--on-primary)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary.busy,.btn.primary.busy:disabled{opacity:1;cursor:progress;background:var(--primary-hover)}
+.btn.big{width:100%;padding:12px;font-size:15px;border-radius:10px}
+.btn.small{padding:5px 10px;font-size:12.5px}
 input[type=file]{display:none}
-#list{list-style:none;padding:0}#list li{display:flex;align-items:center;gap:8px;padding:6px;border-bottom:1px solid #eee}
-#list li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#list li button{padding:2px 8px}
-fieldset{border:1px solid #ddd;border-radius:6px;margin:10px 0}
-#scan{padding:10px 24px;font-size:16px;background:#2563eb;color:#fff;border:0;border-radius:4px;cursor:pointer}
-#scan:disabled{background:#999}
-table{border-collapse:collapse;font-size:13px;margin:8px 0}td,th{border:1px solid #ccc;padding:3px 6px}
-.error{color:#b00020}.warn{color:#9a5b00}
-</style></head>
+
+/* Page list */
+.listhead{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12.5px}
+.linkbtn{background:none;border:0;color:var(--primary);cursor:pointer;font-weight:600;font-size:12.5px;padding:0}
+#list{list-style:none;margin:6px 0 0;padding:0;max-height:320px;overflow:auto}
+#list li{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;background:var(--surface)}
+#list li.dragging{opacity:.4}
+#list li.target{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-ring)}
+.thumb{width:44px;height:44px;border-radius:6px;flex:none;object-fit:cover;background:var(--surface-2);border:1px solid var(--border);display:grid;place-items:center;font-size:10.5px;font-weight:700;color:var(--muted)}
+img.thumb{background:#fff}
+.num{flex:none;min-width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--primary-soft);color:var(--primary)}
+.fname{flex:1;min-width:0}.fname b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fname small{color:var(--muted)}
+.icon{background:none;border:0;border-radius:6px;width:28px;height:28px;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.icon:hover{background:var(--surface-2);color:var(--text)}.icon.del:hover{color:var(--danger);background:var(--danger-soft)}
+.handle{cursor:grab;color:var(--border-strong)}
+.empty-list{color:var(--muted);text-align:center;padding:10px;font-size:13px}
+
+/* Segmented control */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border)}
+.seg button{border:0;border-radius:7px;padding:8px 6px;background:transparent;cursor:pointer;font-weight:600;font-size:13px;color:var(--text-2)}
+.seg button small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--primary);box-shadow:var(--shadow)}
+.hint{color:var(--muted);font-size:12.5px;margin:8px 2px 14px}
+.spin{display:block;width:16px;height:16px;border:2.5px solid color-mix(in srgb,var(--on-primary) 35%,transparent);border-top-color:var(--on-primary);border-radius:50%;animation:rot .8s linear infinite}
+.reading{padding:48px 20px;text-align:center;color:var(--muted)}
+.reading .bigspin{width:42px;height:42px;margin:0 auto 14px;border:4px solid var(--primary-soft);border-top-color:var(--primary);border-radius:50%;animation:rot .9s linear infinite}
+.reading h3{color:var(--text);margin:0 0 4px}
+.bar{height:6px;border-radius:99px;background:var(--surface-2);border:1px solid var(--border);overflow:hidden;max-width:360px;margin:16px auto 0}
+.bar span{display:block;height:100%;width:30%;border-radius:99px;background:var(--primary);animation:slide 1.4s ease-in-out infinite}
+@keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* Results */
+.results-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.results-head h2{margin:0;font-size:18px;flex:1}
+.empty{padding:60px 20px;text-align:center;color:var(--muted)}
+.empty svg{color:var(--border-strong)}
+.empty h3{color:var(--text);margin:10px 0 4px}
+.empty ol{display:inline-block;text-align:left;margin:12px 0 0;padding-left:18px}
+.inv{margin-bottom:16px;overflow:hidden}
+.inv-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.inv-title{flex:1;min-width:200px}.inv-title b{font-size:16px;display:block}.inv-title small{color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;padding:14px 18px}
+.stat{padding:10px 12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border)}
+.stat small{display:block;color:var(--muted);font-size:12px}.stat b{font-size:18px;font-variant-numeric:tabular-nums}
+.callout{margin:0 18px 12px;padding:10px 12px;border-radius:10px;font-size:13px}
+.callout.warn{background:var(--warning-soft);color:var(--warning)}
+.callout.err{background:var(--danger-soft);color:var(--danger)}
+.callout.ok{background:var(--success-soft);color:var(--success)}
+.callout ul{margin:4px 0 0;padding-left:18px}
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));border-top:1px solid var(--border);overflow:hidden}
+.field{padding:9px 18px;box-shadow:inset -1px -1px 0 var(--border);margin:0 -1px -1px 0}
+.field small{display:block;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+.field span{font-weight:600;word-break:break-word}.field span.none{color:var(--border-strong);font-weight:400}
+.tablewrap{overflow:auto;max-height:520px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{position:sticky;top:0;background:var(--surface-2);color:var(--text-2);text-align:left;font-weight:600;font-size:12px;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr:nth-child(even) td{background:var(--surface-2)}
+tbody tr:hover td{background:var(--primary-soft)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.code{font-family:var(--mono);font-size:12.5px}
+tfoot td{font-weight:700;background:var(--surface);border-top:2px solid var(--border-strong);position:sticky;bottom:0}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+.chip.ok{background:var(--success-soft);color:var(--success)}.chip.warn{background:var(--warning-soft);color:var(--warning)}.chip.err{background:var(--danger-soft);color:var(--danger)}
+
+/* Toasts */
+#toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:20}
+.toast{min-width:260px;max-width:420px;padding:12px 14px;border-radius:10px;background:var(--text);color:var(--bg);box-shadow:0 8px 24px rgba(0,0,0,.2);font-size:13px;animation:up .2s}
+.toast.err{background:var(--danger);color:#fff}
+@keyframes up{from{transform:translateY(10px);opacity:0}}
+</style>
+</head>
 <body>
-<h2>VB OCR - scan invoices</h2>
-<p class="muted">Supported: JPG, JPEG, PNG, BMP, TIFF, WEBP, GIF, PDF (max 25 MB each).</p>
 
-<div id="drop">
-  <b>Drag and drop invoice files or a folder here</b><br>
-  <span class="muted">or paste a screenshot / copied image with Ctrl+V</span>
-  <div class="buttons" style="margin-top:12px">
-    <label class="btn">Choose files...<input id="pickFiles" type="file" multiple accept="image/*,.pdf"></label>
-    <label class="btn">Choose folder...<input id="pickFolder" type="file" webkitdirectory multiple></label>
-    <label class="btn">Take photo<input id="pickCamera" type="file" accept="image/*" capture="environment"></label>
-    <button type="button" id="clear">Clear list</button>
-  </div>
-</div>
+<header class="topbar">
+  <div class="logo">VB</div>
+  <div class="brand"><b>VB OCR</b><span>Supplier invoice → purchase-entry CSV</span></div>
+  <div class="spacer"></div>
+  <a class="toplink" href="/docs" target="_blank" rel="noopener">API</a>
+  <span id="health" class="pill loading"><span class="dot"></span><span id="healthText">Connecting…</span></span>
+</header>
 
-<ul id="list"></ul>
+<main class="layout">
+  <!-- Left: input -->
+  <section class="card panel" aria-label="Upload">
+    <div class="step"><i>1</i>Add invoice pages</div>
+    <div id="drop" class="drop">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+      <h3>Drop files or a folder here</h3>
+      <p>or paste a screenshot with <kbd>Ctrl</kbd>+<kbd>V</kbd></p>
+      <div class="btnrow">
+        <label class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Files<input id="pickFiles" type="file" multiple accept="image/*,.pdf,.tif,.tiff"></label>
+        <label class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Folder<input id="pickFolder" type="file" webkitdirectory multiple></label>
+        <label class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Camera<input id="pickCamera" type="file" accept="image/*" capture="environment"></label>
+      </div>
+    </div>
 
-<fieldset><legend>The files are</legend>
-  <label><input type="radio" name="mode" value="pages" checked> pages of <b>one</b> invoice (in the order above)</label><br>
-  <label><input type="radio" name="mode" value="each"> <b>separate</b> invoices (one CSV each, downloaded as a ZIP)</label>
-</fieldset>
-<fieldset><legend>Result</legend>
-  <label><input type="radio" name="format" value="csv" checked> Download CSV</label>
-  <label><input type="radio" name="format" value="json"> Show on this page</label>
-</fieldset>
-<p><button id="scan" disabled>Scan</button> <span id="status"></span></p>
-<div id="result"></div>
+    <div class="listhead"><span id="listCount">No pages yet</span><button id="clear" class="linkbtn hidden" type="button">Clear all</button></div>
+    <ul id="list"></ul>
+
+    <div class="step"><i>2</i>These files are</div>
+    <div class="seg" role="radiogroup">
+      <button type="button" class="on" data-mode="pages" role="radio" aria-checked="true">One invoice<small>pages in list order</small></button>
+      <button type="button" data-mode="each" role="radio" aria-checked="false">Separate invoices<small>one CSV per file</small></button>
+    </div>
+    <p class="hint">Supported: JPG, PNG, BMP, TIFF, WEBP, GIF, PDF · max 25 MB each</p>
+
+    <button id="scan" class="btn primary big" type="button" disabled>
+      <span id="scanIcon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M7 12h10"/></svg></span>
+      <span id="scanText">Scan</span>
+    </button>
+  </section>
+
+  <!-- Right: results -->
+  <section aria-label="Results" aria-live="polite">
+    <div id="resultsHead" class="results-head hidden">
+      <h2 id="resultsTitle">Results</h2>
+      <button id="downloadAll" class="btn small hidden" type="button">Download all (ZIP)</button>
+    </div>
+    <div id="results">
+      <div class="card empty">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <h3>Results appear here</h3>
+        <div>Read invoices in three steps:</div>
+        <ol><li>Add the invoice photo(s), scan(s) or PDF</li><li>Choose one invoice or separate invoices</li><li>Click <b>Scan</b>, check the values, download the CSV</li></ol>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toasts"></div>
 
 <script>
 const EXT = /\.(jpe?g|jpe|jfif|png|bmp|tiff?|webp|gif|pdf)$/i;
-let files = [];
-const $ = id => document.getElementById(id);
+const PREVIEWABLE = /\.(jpe?g|jpe|jfif|png|bmp|webp|gif)$/i;
+const HEADER_FIELDS = [
+  ['supplier_name', 'Supplier Name'], ['invoice_number', 'Invoice Number'], ['invoice_date', 'Invoice Date'],
+  ['po_number', 'Purchase Order Number'], ['po_date', 'Purchase Order Date'], ['lr_booking_date', 'L.R Booking Date'],
+  ['stock_received_date', 'Stock Received Date'], ['date', 'Date'], ['grn_number', 'GRN Number']];
+const ITEM_COLUMNS = [
+  ['sku', 'SKU No./Item ID.', 'code'], ['article_id', 'Article ID', 'code'], ['brand', 'Brand Name'],
+  ['design_name', 'Design Name'], ['size', 'Size'], ['cup_size', 'Cup Size'], ['colour', 'Colour'],
+  ['quantity', 'Quantity', 'n'], ['cost_price', 'Cost Price', 'n'], ['mrp', 'M.R.P', 'n'], ['amount', 'Amount', 'n']];
 
-function add(list) {
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let pages = [];      // {file, url}
+let mode = 'pages';
+let lastResults = [];
+
+/* ---------- server status ---------- */
+async function checkHealth() {
+  let state = 'off', text = 'Server offline';
+  try {
+    const r = await fetch('/health', {cache: 'no-store'});
+    const d = await r.json();
+    if (d.status === 'ok') { state = 'ok'; text = 'Ready · v' + d.version; }
+    else { state = 'loading'; text = 'Loading OCR…'; }
+  } catch (e) { /* offline */ }
+  $('health').className = 'pill ' + state;
+  $('healthText').textContent = text;
+  setTimeout(checkHealth, state === 'ok' ? 30000 : 3000);
+}
+checkHealth();
+
+/* ---------- page list ---------- */
+function addFiles(list) {
   let skipped = 0;
   for (const f of list) {
-    if (EXT.test(f.name)) files.push(f); else skipped++;
+    if (!EXT.test(f.name)) { skipped++; continue; }
+    if (f.size > 25 * 1024 * 1024) { toast(f.name + ' is larger than 25 MB', true); continue; }
+    pages.push({file: f, url: PREVIEWABLE.test(f.name) ? URL.createObjectURL(f) : null});
   }
+  if (skipped) toast(skipped + ' file(s) skipped: not an image or PDF');
   render();
-  $('status').textContent = skipped ? skipped + ' file(s) skipped: not an image or PDF.' : '';
+}
+function removeAt(i) { if (pages[i].url) URL.revokeObjectURL(pages[i].url); pages.splice(i, 1); render(); }
+function move(from, to) { if (to < 0 || to >= pages.length) return; const [p] = pages.splice(from, 1); pages.splice(to, 0, p); render(); }
+const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+
+function iconBtn(title, path, cls) {
+  const b = el('button', 'icon' + (cls ? ' ' + cls : '')); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title);
+  b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' + path + '</svg>';
+  return b;
 }
 function render() {
   const ul = $('list'); ul.innerHTML = '';
-  files.forEach((f, i) => {
-    const li = document.createElement('li');
-    li.innerHTML = '<b>' + (i + 1) + '.</b><span></span><small></small>' +
-      '<button title="Move up">&#8593;</button><button title="Move down">&#8595;</button><button title="Remove">&#10005;</button>';
-    li.querySelector('span').textContent = f.webkitRelativePath || f.name;
-    li.querySelector('small').textContent = (f.size / 1024 / 1024).toFixed(1) + ' MB';
-    const [up, down, del] = li.querySelectorAll('button');
-    up.onclick = () => { if (i > 0) { [files[i - 1], files[i]] = [files[i], files[i - 1]]; render(); } };
-    down.onclick = () => { if (i < files.length - 1) { [files[i + 1], files[i]] = [files[i], files[i + 1]]; render(); } };
-    del.onclick = () => { files.splice(i, 1); render(); };
+  pages.forEach((p, i) => {
+    const li = el('li'); li.draggable = true;
+    li.appendChild(iconBtn('Drag to reorder', '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>', 'handle'));
+    if (mode === 'pages') li.appendChild(el('span', 'num', String(i + 1)));
+    if (p.url) {
+      const img = el('img', 'thumb'); img.src = p.url; img.alt = '';
+      img.onerror = () => img.replaceWith(el('div', 'thumb', p.file.name.split('.').pop().toUpperCase()));
+      li.appendChild(img);
+    }
+    else li.appendChild(el('div', 'thumb', p.file.name.split('.').pop().toUpperCase()));
+    const name = el('div', 'fname'); name.appendChild(el('b', null, p.file.webkitRelativePath || p.file.name));
+    name.appendChild(el('small', null, fmtSize(p.file.size))); li.appendChild(name);
+    const up = iconBtn('Move up', '<path d="m18 15-6-6-6 6"/>'); up.onclick = () => move(i, i - 1); up.disabled = i === 0;
+    const down = iconBtn('Move down', '<path d="m6 9 6 6 6-6"/>'); down.onclick = () => move(i, i + 1); down.disabled = i === pages.length - 1;
+    const del = iconBtn('Remove', '<path d="M18 6 6 18M6 6l12 12"/>', 'del'); del.onclick = () => removeAt(i);
+    li.append(up, down, del);
+    li.ondragstart = e => { li.classList.add('dragging'); e.dataTransfer.setData('text/x-page', String(i)); e.dataTransfer.effectAllowed = 'move'; };
+    li.ondragend = () => li.classList.remove('dragging');
+    li.ondragover = e => { if (e.dataTransfer.types.includes('text/x-page')) { e.preventDefault(); li.classList.add('target'); } };
+    li.ondragleave = () => li.classList.remove('target');
+    li.ondrop = e => { const from = e.dataTransfer.getData('text/x-page'); if (from === '') return; e.preventDefault(); e.stopPropagation(); move(Number(from), i); };
     ul.appendChild(li);
   });
-  $('scan').disabled = files.length === 0;
+  if (!pages.length) ul.appendChild(el('li', 'empty-list', 'Added pages are listed here. Drag them to change the order.'));
+  const n = pages.length;
+  $('listCount').textContent = n ? n + (mode === 'pages' ? ' page' : ' invoice') + (n === 1 ? '' : 's') + ' · ' + fmtSize(pages.reduce((s, p) => s + p.file.size, 0)) : 'No pages yet';
+  $('clear').classList.toggle('hidden', !n);
+  if (!busy) { $('scan').disabled = !n; $('scanText').textContent = n ? (mode === 'pages' ? 'Scan ' + n + ' page' + (n === 1 ? '' : 's') : 'Scan ' + n + ' invoice' + (n === 1 ? '' : 's')) : 'Scan'; }
 }
 
-for (const id of ['pickFiles', 'pickFolder', 'pickCamera']) {
-  $(id).onchange = e => { add(e.target.files); e.target.value = ''; };
-}
-$('clear').onclick = () => { files = []; render(); $('result').innerHTML = ''; };
+for (const id of ['pickFiles', 'pickFolder', 'pickCamera']) $(id).onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+$('clear').onclick = () => { pages.forEach(p => p.url && URL.revokeObjectURL(p.url)); pages = []; render(); };
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll('.seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+  render();
+});
 
-// Drag and drop, including whole folders
+/* drag and drop (files and whole folders) onto the drop zone or anywhere on the page */
 const drop = $('drop');
-drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
-drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = async e => {
+const isFileDrag = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+document.addEventListener('dragover', e => { if (isFileDrag(e)) { e.preventDefault(); drop.classList.add('over'); } });
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) drop.classList.remove('over'); });
+document.addEventListener('drop', async e => {
+  if (!isFileDrag(e)) return;
   e.preventDefault(); drop.classList.remove('over');
   const entries = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
-  if (!entries.length) { add(e.dataTransfer.files); return; }
+  if (!entries.length) { addFiles(e.dataTransfer.files); return; }
   const found = [];
   async function walk(entry) {
     if (entry.isFile) { found.push(await new Promise(r => entry.file(r))); return; }
-    const reader = entry.createReader();
-    let batch;
-    do {
-      batch = await new Promise(r => reader.readEntries(r));
-      for (const child of batch) await walk(child);
-    } while (batch.length);
+    const reader = entry.createReader(); let batch;
+    do { batch = await new Promise(r => reader.readEntries(r)); for (const c of batch) await walk(c); } while (batch.length);
   }
   for (const entry of entries) await walk(entry);
   found.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
-  add(found);
-};
+  addFiles(found);
+});
 
-// Paste an image from the clipboard (screenshot, image copied from WhatsApp Web, ...)
-document.onpaste = e => {
+/* paste screenshots / copied images */
+document.addEventListener('paste', e => {
   const pasted = [];
   for (const item of e.clipboardData.items) {
-    if (item.kind === 'file') {
-      const f = item.getAsFile();
-      const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
-      pasted.push(new File([f], 'pasted-' + (files.length + pasted.length + 1) + '.' + ext, {type: f.type}));
-    }
+    if (item.kind !== 'file') continue;
+    const f = item.getAsFile(); if (!f) continue;
+    const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    pasted.push(EXT.test(f.name) && f.name !== 'image.png' ? f : new File([f], 'pasted-' + (pages.length + pasted.length + 1) + '.' + ext, {type: f.type}));
   }
-  if (pasted.length) add(pasted);
-};
+  if (pasted.length) { addFiles(pasted); toast(pasted.length + ' pasted image(s) added'); }
+});
 
+/* ---------- scan ---------- */
+let busy = false;
 $('scan').onclick = async () => {
-  const mode = document.querySelector('input[name=mode]:checked').value;
-  const format = document.querySelector('input[name=format]:checked').value;
+  if (!pages.length || busy) return;
+  busy = true;
+  const started = Date.now();
+  $('scan').disabled = true; $('scan').classList.add('busy');
+  $('scanIcon').innerHTML = '<span class="spin"></span>';
+  const previous = [...$('results').childNodes];
+  const hadHead = !$('resultsHead').classList.contains('hidden');
+  $('resultsHead').classList.add('hidden');
+  const n = pages.length;
+  $('results').innerHTML = '<div class="card reading"><div class="bigspin"></div><h3></h3><div></div><div class="bar"><span></span></div></div>';
+  $('results').querySelector('h3').textContent = 'Reading ' + n + (mode === 'pages' ? ' page' : ' invoice') + (n === 1 ? '' : 's') + '…';
+  $('results').querySelector('h3 + div').textContent = 'About 10–60 seconds per page. You can keep this tab open in the background.';
+  const tick = setInterval(() => { $('scanText').textContent = 'Reading… ' + Math.round((Date.now() - started) / 1000) + ' s'; }, 500);
   const body = new FormData();
-  files.forEach(f => body.append('files', f, f.name));
-  $('scan').disabled = true; $('result').innerHTML = '';
-  $('status').textContent = 'Reading ' + files.length + ' file(s), please wait...';
+  pages.forEach(p => body.append('files', p.file, p.file.name));
   try {
-    const response = await fetch('/scan?format=' + format + '&mode=' + mode, {method: 'POST', body});
-    if (!response.ok) throw new Error((await response.text()) || response.statusText);
-    if (format === 'csv') {
-      const blob = await response.blob();
-      const name = mode === 'each' ? 'invoices.zip' : (files[0].name.replace(/\.[^.]+$/, '') || 'invoice') + '.csv';
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
-      $('status').textContent = 'Downloaded ' + name + '.';
-    } else {
-      const data = await response.json();
-      const list = data.invoices || [Object.assign({file: files.map(f => f.name).join(' + ')}, data)];
-      list.forEach(showInvoice);
-      $('status').textContent = 'Done.';
+    const r = await fetch('/scan?format=json&mode=' + mode, {method: 'POST', body});
+    if (!r.ok) {
+      let msg = r.statusText;
+      try { const d = await r.json(); msg = typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail); } catch (e) { /* not JSON */ }
+      throw new Error(msg || ('Server error ' + r.status));
     }
+    const d = await r.json();
+    const names = pages.map(p => p.file.name);
+    lastResults = d.invoices || [Object.assign({file: names.join(' + ')}, d)];
+    showResults(lastResults, (Date.now() - started) / 1000);
   } catch (err) {
-    $('status').innerHTML = '<span class="error"></span>';
-    $('status').firstChild.textContent = 'Error: ' + err.message;
-  } finally { $('scan').disabled = files.length === 0; }
+    $('results').replaceChildren(...previous);
+    $('resultsHead').classList.toggle('hidden', !hadHead);
+    toast(err.message === 'Failed to fetch' ? 'Cannot reach the VB OCR server. Is start-server.bat running?' : err.message, true);
+  } finally {
+    clearInterval(tick); busy = false; $('scan').classList.remove('busy');
+    $('scanIcon').innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M7 12h10"/></svg>';
+    render();
+  }
 };
 
-function cell(tag, text) { const c = document.createElement(tag); c.textContent = text == null ? '' : text; return c; }
-function showInvoice(inv) {
-  const box = document.createElement('div');
-  box.appendChild(cell('h3', inv.file));
-  if (inv.error) { box.appendChild(cell('p', inv.error)).className = 'error'; $('result').appendChild(box); return; }
-  (inv.warnings || []).forEach(w => box.appendChild(cell('p', 'Check: ' + w)).className = 'warn');
-  const head = document.createElement('table');
-  Object.entries(inv.header || {}).forEach(([k, v]) => { const tr = head.insertRow(); tr.appendChild(cell('th', k)); tr.appendChild(cell('td', v)); });
-  box.appendChild(head);
-  const items = inv.items || [];
-  if (items.length) {
-    const t = document.createElement('table'); const hr = t.insertRow();
-    Object.keys(items[0]).forEach(k => hr.appendChild(cell('th', k)));
-    items.forEach(it => { const tr = t.insertRow(); Object.values(it).forEach(v => tr.appendChild(cell('td', v))); });
-    box.appendChild(t);
-  }
-  $('result').appendChild(box);
+/* ---------- results ---------- */
+const num = v => { const n = parseFloat(String(v || '').replace(/,/g, '')); return isNaN(n) ? 0 : n; };
+const money = n => n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const qtyFmt = n => n.toLocaleString('en-IN', {maximumFractionDigits: 2});
+
+function showResults(list, seconds) {
+  const box = $('results'); box.innerHTML = '';
+  const ok = list.filter(x => !x.error).length;
+  $('resultsHead').classList.remove('hidden');
+  $('resultsTitle').textContent = list.length === 1 ? 'Result' : ok + ' of ' + list.length + ' invoices read';
+  $('downloadAll').classList.toggle('hidden', list.filter(x => x.csv).length < 2);
+  list.forEach((inv, i) => box.appendChild(invoiceCard(inv, i, seconds)));
 }
+
+function invoiceCard(inv, index, seconds) {
+  const card = el('article', 'card inv');
+  const head = el('div', 'inv-head');
+  const title = el('div', 'inv-title');
+  const supplier = inv.header && inv.header.supplier_name;
+  title.appendChild(el('b', null, supplier || inv.file || 'Invoice'));
+  title.appendChild(el('small', null, inv.file + (seconds && index === 0 && lastResults.length === 1 ? ' · read in ' + Math.round(seconds) + ' s' : '')));
+  head.appendChild(title);
+
+  if (inv.error) {
+    title.lastChild.textContent = 'Could not be read';
+    head.appendChild(el('span', 'chip err', 'Failed'));
+    card.appendChild(head);
+    card.appendChild(el('div', 'callout err', friendlyError(inv.error)));
+    card.lastChild.style.marginTop = '12px';
+    return card;
+  }
+  const items = inv.items || [], warnings = inv.warnings || [];
+  head.appendChild(el('span', 'chip ' + (!items.length ? 'err' : warnings.length ? 'warn' : 'ok'),
+    !items.length ? 'No items' : warnings.length ? warnings.length + ' to check' : 'Looks good'));
+  if (inv.csv) {
+    const dl = el('button', 'btn small primary', 'Download CSV'); dl.type = 'button';
+    dl.onclick = () => download(csvName(inv.file, index), '﻿' + inv.csv, 'text/csv;charset=utf-8');
+    const cp = el('button', 'btn small', 'Copy'); cp.type = 'button'; cp.title = 'Copy as a table - paste into Excel';
+    cp.onclick = async () => { try { await navigator.clipboard.writeText(csvToTsv(inv.csv)); toast('Copied - paste it into Excel'); } catch (e) { toast('Copy is not allowed here', true); } };
+    head.append(cp, dl);
+  }
+  card.appendChild(head);
+
+  const totalQty = items.reduce((s, it) => s + num(it.quantity), 0);
+  const totalAmt = items.reduce((s, it) => s + num(it.amount), 0);
+  const stats = el('div', 'stats');
+  [['Items', String(items.length)], ['Total quantity', qtyFmt(totalQty)], ['Total amount', '₹ ' + money(totalAmt)],
+   ['Invoice no.', (inv.header && inv.header.invoice_number) || '—']].forEach(([k, v]) => {
+    const s = el('div', 'stat'); s.append(el('small', null, k), el('b', null, v)); stats.appendChild(s);
+  });
+  card.appendChild(stats);
+
+  if (warnings.length) {
+    const c = el('div', 'callout warn'); c.appendChild(el('b', null, 'Please check'));
+    const ul = el('ul'); warnings.forEach(w => ul.appendChild(el('li', null, w))); c.appendChild(ul); card.appendChild(c);
+  } else if (items.length) {
+    card.appendChild(el('div', 'callout ok', 'Compare the total amount with the total printed on the invoice.'));
+  }
+
+  const fields = el('div', 'fields');
+  HEADER_FIELDS.forEach(([key, label]) => {
+    const f = el('div', 'field'); f.appendChild(el('small', null, label));
+    const v = inv.header && inv.header[key];
+    f.appendChild(el('span', v ? null : 'none', v || '—')); fields.appendChild(f);
+  });
+  card.appendChild(fields);
+
+  if (items.length) {
+    const wrap = el('div', 'tablewrap'), t = el('table');
+    const hr = t.createTHead().insertRow();
+    hr.appendChild(el('th', 'n', '#'));
+    ITEM_COLUMNS.forEach(([, label, cls]) => hr.appendChild(el('th', cls === 'n' ? 'n' : null, label)));
+    const tb = t.createTBody();
+    items.forEach((it, r) => {
+      const tr = tb.insertRow(); tr.appendChild(el('td', 'n', String(r + 1)));
+      ITEM_COLUMNS.forEach(([key, , cls]) => tr.appendChild(el('td', cls || null, it[key] || '')));
+    });
+    const fr = t.createTFoot().insertRow();
+    fr.appendChild(el('td', null, 'Total'));
+    ITEM_COLUMNS.forEach(([key]) => fr.appendChild(el('td', 'n', key === 'quantity' ? qtyFmt(totalQty) : key === 'amount' ? money(totalAmt) : '')));
+    wrap.appendChild(t); card.appendChild(wrap);
+  }
+  return card;
+}
+
+/* CSV -> tab-separated, so a paste into Excel fills separate columns */
+function csvToTsv(csv) {
+  const rows = []; let row = [], field = '', quoted = false;
+  for (let i = 0; i < csv.length; i++) {
+    const c = csv[i];
+    if (quoted) {
+      if (c === '"' && csv[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && csv[i + 1] === '\n') i++; row.push(field); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows.map(r => r.map(f => f.replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n');
+}
+function friendlyError(text) {
+  const t = String(text).replace(/^\w+Error:\s*/, '');
+  if (/cannot identify image|Cannot read image/i.test(t)) return 'This file is damaged or is not really an image. Open it in an image viewer to check, or take the photo again. (' + t + ')';
+  if (/Unsupported file type/i.test(t)) return t + '. Use JPG, PNG, BMP, TIFF, WEBP, GIF or PDF.';
+  return t;
+}
+const csvName = (file, i) => (String(file || 'invoice-' + (i + 1)).split(' + ')[0].replace(/\.[^.]+$/, '') || 'invoice') + '.csv';
+function download(name, data, type) {
+  const a = el('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], {type})); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+$('downloadAll').onclick = () => {
+  const used = {}, files = [];
+  lastResults.forEach((inv, i) => {
+    if (!inv.csv) return;
+    let name = csvName(inv.file, i), base = name.slice(0, -4), n = 1;
+    while (used[name.toLowerCase()]) name = base + '_' + (++n) + '.csv';
+    used[name.toLowerCase()] = 1; files.push([name, '﻿' + inv.csv]);
+  });
+  download('invoices.zip', makeZip(files), 'application/zip');
+};
+
+/* minimal ZIP writer (no compression) so all CSVs download as one file */
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const hdr = (size, fill) => { const b = new DataView(new ArrayBuffer(size)); fill(b); return new Uint8Array(b.buffer); };
+  for (const [name, text] of files) {
+    const nm = enc.encode(name), data = enc.encode(text), crc = crc32(data);
+    const local = hdr(30, v => { v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, 0x0800, true);
+      v.setUint32(14, crc, true); v.setUint32(18, data.length, true); v.setUint32(22, data.length, true); v.setUint16(26, nm.length, true); });
+    central.push([hdr(46, v => { v.setUint32(0, 0x02014b50, true); v.setUint16(4, 20, true); v.setUint16(6, 20, true); v.setUint16(8, 0x0800, true);
+      v.setUint32(16, crc, true); v.setUint32(20, data.length, true); v.setUint32(24, data.length, true); v.setUint16(28, nm.length, true);
+      v.setUint32(42, offset, true); }), nm]);
+    parts.push(local, nm, data); offset += 30 + nm.length + data.length;
+  }
+  let size = 0; central.forEach(([h, nm]) => { parts.push(h, nm); size += h.length + nm.length; });
+  parts.push(hdr(22, v => { v.setUint32(0, 0x06054b50, true); v.setUint16(8, files.length, true); v.setUint16(10, files.length, true);
+    v.setUint32(12, size, true); v.setUint32(16, offset, true); }));
+  return new Blob(parts, {type: 'application/zip'});
+}
+
+/* ---------- toasts ---------- */
+function toast(text, isError) {
+  const t = el('div', 'toast' + (isError ? ' err' : ''), text); $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), isError ? 8000 : 3500);
+}
+render();
 </script>
-</body></html>
+</body>
+</html>

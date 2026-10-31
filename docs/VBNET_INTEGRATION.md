@@ -77,14 +77,17 @@ Private Sub btnScanInvoice_Click(sender As Object, e As EventArgs) Handles btnSc
 End Sub
 ```
 
-The dialog has a **page list** on the left. The user adds the invoice pages in any of these ways,
-then clicks **Scan**:
+The dialog uses the same indigo colour scheme as the browser page. On the left are the page list
+and a preview of the selected page. On the right are a coloured status bar (blue = info,
+green = all good, amber = please check, red = error), tiles for item count, total quantity and
+total amount, the invoice details and the item table. The user adds the invoice pages in any of
+these ways, then clicks **Scan**:
 
 | Way | How |
 |---|---|
-| **Add files...** | Select one or more files (jpg, png, bmp, tif, webp, gif, pdf) |
-| **Add folder...** | Every image / PDF in the folder, sorted by name |
-| **Paste (Ctrl+V)** | An image copied to the clipboard (Print Screen / Snipping Tool screenshot, image copied from WhatsApp Desktop or a browser), or files copied in Explorer |
+| **Files...** | Select one or more files (jpg, png, bmp, tif, webp, gif, pdf) |
+| **Folder...** | Every image / PDF in the folder, sorted by name |
+| **Paste** or Ctrl+V | An image copied to the clipboard (Print Screen / Snipping Tool screenshot, image copied from WhatsApp Desktop or a browser), or files copied in Explorer |
 | Drag and drop | Drop files or folders from Explorer onto the page list |
 
 All listed files are pages of **one** invoice, scanned in list order. **Up** / **Down** change the
@@ -97,7 +100,9 @@ The dialog also:
 - starts the VB OCR server in the background if it is not running (no window appears)
 - scans on a background thread, so your application does not freeze
 - shows the header values and items in editable grids, so the user can correct a misread value
-- shows the total quantity and amount, to compare with the total printed on the invoice
+- shows the total quantity and amount (in Indian number format, e.g. ₹ 1,23,456.00), updated
+  as the user corrects values or deletes rows, to compare with the total printed on the invoice
+- shows a preview of the selected page, so values can be checked against the picture
 - returns the corrected values in `dlg.Invoice`
 
 To scan files your application already has (for example from a scanner folder), set them

@@ -243,7 +243,7 @@ This never blocks or slows down the start of your application.
 | Scan a clear invoice from a regular supplier | Header and items filled. Totals match the printed invoice |
 | Scan a phone photo taken sideways | Same result as a straight photo |
 | Scan a 2-page invoice (add both files, check the order) | All items from both pages |
-| Scan a PNG screenshot, using **Paste (Ctrl+V)** after Print Screen / Snipping Tool | Same as a JPG |
+| Scan a PNG screenshot, using **Paste** (or Ctrl+V) after Print Screen / Snipping Tool | Same as a JPG |
 | Drag a file and a folder from Explorer onto the page list | Both added; non-image files skipped with a message |
 | Correct a value in the dialog, then OK | The corrected value appears on the form |
 | Close `pythonw.exe` in Task Manager, then scan | Server starts automatically, then the scan works |
