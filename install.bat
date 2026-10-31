@@ -39,6 +39,9 @@ echo ============================================================
 echo  VB OCR is installed.
 echo  Start the server:  start-server.bat
 echo  Scan from command line:  scan.bat invoice.jpg   or   scan-folder.bat C:\Invoices
+echo  Start it hidden at every Windows log-on:  autostart-on.bat
+echo  Get a newer version later:  update.bat
+echo  Your own settings go in config\settings.local.yaml
 echo ============================================================
 exit /b 0
 

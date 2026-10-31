@@ -71,6 +71,12 @@ Restart the server (close the window and run `start-server.bat` again), then sca
 | Garment supplier with SKU codes such as `NTY03140125MST` | `brand`, `colour_from_sku_suffix`, and a plain `Date` label as PO date |
 | Fabric wholesaler with descriptions such as `RAYMOND/CLASSIQUE/1315177` | Only `name` and `match`. The default `description_patterns` split brand / design / article |
 
+## Values the invoice does not print
+
+Many invoices leave out M.R.P, Size or Article ID. Instead of typing them every time, keep an
+item list in `config\item_master.csv` (SKU plus the values). Every scan fills the empty columns
+from it. See [`item_master` in CONFIGURATION.md](CONFIGURATION.md#item_master).
+
 ## What is not supported
 
 - **Handwritten invoices.** Printed text only.

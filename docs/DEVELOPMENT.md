@@ -4,21 +4,27 @@
 
 ```
 vbocr/
-├── install.bat, start-server.bat, scan.bat, scan-folder.bat    Windows scripts
+├── install.bat, update.bat, start-server.bat, scan.bat, scan-folder.bat,
+│   autostart-on.bat, autostart-off.bat        Windows scripts
 ├── install.sh, start-server.sh                macOS / Linux scripts
 ├── requirements.txt                           runtime packages (pinned OCR versions)
 ├── requirements-dev.txt                       + test tools
 ├── config/
 │   ├── settings.yaml                          general settings
-│   └── suppliers.yaml                         supplier profiles
+│   ├── settings.local.yaml                    this PC's overrides (git-ignored)
+│   ├── suppliers.yaml                         supplier profiles
+│   └── item_master.example.csv                example item list
 ├── vbocr/                                     Python package
 │   ├── cli.py            command line (scan / serve / setup)
 │   ├── server.py         HTTP server (FastAPI)
 │   ├── upload.html       browser upload page (files, folder, drag and drop, paste)
 │   ├── scanner.py        files in → Invoice / CSV out
 │   ├── engine.py         image loading (Pillow) + PaddleOCR wrapper → Page / Word objects
+│   ├── pdf.py            digital PDF text layer (pypdfium2); scanned pages rendered for OCR
 │   ├── table.py          rebuilds the item table from text boxes
-│   ├── extractor.py      header values, column mapping, supplier rules
+│   ├── extractor.py      header values, column mapping, supplier rules, total check, unsure values
+│   ├── item_master.py    optional item list that fills empty columns
+│   ├── history.py        scan history, duplicate warning
 │   ├── csv_output.py     purchase-entry CSV layout
 │   ├── config.py         loads the YAML files
 │   ├── models.py         data classes

@@ -132,6 +132,39 @@ tfoot td{font-weight:700;background:var(--surface);border-top:2px solid var(--bo
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
 .chip.ok{background:var(--success-soft);color:var(--success)}.chip.warn{background:var(--warning-soft);color:var(--warning)}.chip.err{background:var(--danger-soft);color:var(--danger)}
 
+/* Editing */
+.cellin{width:100%;min-width:60px;border:1px solid transparent;border-radius:6px;background:transparent;padding:4px 6px;font:inherit;color:inherit}
+.cellin:hover{border-color:var(--border-strong)}
+.cellin:focus{outline:none;border-color:var(--primary);background:var(--surface);box-shadow:0 0 0 3px var(--primary-ring)}
+td.n .cellin{text-align:right;font-variant-numeric:tabular-nums}
+td.code .cellin{font-family:var(--mono);font-size:12.5px}
+td{padding:3px 4px}
+.field .cellin{font-weight:600;padding:2px 4px;margin-left:-5px}
+.unsure .cellin,.cellin.unsure{background:var(--warning-soft);border-color:var(--warning)}
+.edited .cellin,.cellin.edited{border-left:3px solid var(--primary)}
+.rowdel{opacity:.35}.rowdel:hover{opacity:1}
+tr:hover .rowdel{opacity:1}
+.legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:8px 18px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}
+.legend .u{background:var(--warning-soft);border:1px solid var(--warning)}.legend .e{border-left:3px solid var(--primary);background:var(--surface-2)}
+.savebar{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--primary-soft);color:var(--primary);font-size:13px;font-weight:600}
+.savebar .spacer{flex:1}
+
+/* Recent scans */
+.history{padding:14px 18px}
+.history input[type=search]{width:100%;padding:9px 12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface)}
+.history input[type=search]:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-ring)}
+.hrow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-top:8px;cursor:pointer;background:var(--surface)}
+.hrow:hover{border-color:var(--primary);background:var(--primary-soft)}
+.hrow b{font-weight:600}.hrow small{color:var(--muted)}.hrow .amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* Access key dialog */
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:grid;place-items:center;z-index:30;padding:16px}
+.modal .card{width:min(420px,100%);padding:20px}
+.modal h3{margin:0 0 6px}.modal p{margin:0 0 14px;color:var(--muted)}
+.modal input{width:100%;padding:10px 12px;border:1px solid var(--border-strong);border-radius:8px;margin-bottom:14px;background:var(--surface)}
+.modal .btnrow{justify-content:flex-end}
+
 /* Toasts */
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:20}
 .toast{min-width:260px;max-width:420px;padding:12px 14px;border-radius:10px;background:var(--text);color:var(--bg);box-shadow:0 8px 24px rgba(0,0,0,.2);font-size:13px;animation:up .2s}
@@ -145,6 +178,7 @@ tfoot td{font-weight:700;background:var(--surface);border-top:2px solid var(--bo
   <div class="logo">VB</div>
   <div class="brand"><b>VB OCR</b><span>Supplier invoice → purchase-entry CSV</span></div>
   <div class="spacer"></div>
+  <button id="openHistory" class="btn small" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>Recent scans</button>
   <a class="toplink" href="/docs" target="_blank" rel="noopener">API</a>
   <span id="health" class="pill loading"><span class="dot"></span><span id="healthText">Connecting…</span></span>
 </header>
@@ -197,6 +231,14 @@ tfoot td{font-weight:700;background:var(--surface);border-top:2px solid var(--bo
   </section>
 </main>
 <div id="toasts"></div>
+<div id="keyModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="keyTitle">
+  <form class="card" id="keyForm">
+    <h3 id="keyTitle">Access key needed</h3>
+    <p>This VB OCR server is protected. Enter the access key (ask the person who set it up). It is remembered in this browser.</p>
+    <input id="keyInput" type="password" autocomplete="off" placeholder="Access key" required>
+    <div class="btnrow"><button type="button" class="btn" id="keyCancel">Cancel</button><button class="btn primary" type="submit">Continue</button></div>
+  </form>
+</div>
 
 <script>
 const EXT = /\.(jpe?g|jpe|jfif|png|bmp|tiff?|webp|gif|pdf)$/i;
@@ -215,6 +257,39 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 let pages = [];      // {file, url}
 let mode = 'pages';
 let lastResults = [];
+let keyRequired = false;
+
+/* ---------- requests (adds the access key when the server needs one) ---------- */
+let keyWaiters = null;
+function askKey() {
+  if (!keyWaiters) {
+    keyWaiters = [];
+    $('keyModal').classList.remove('hidden'); $('keyInput').value = ''; $('keyInput').focus();
+  }
+  return new Promise(resolve => keyWaiters.push(resolve));
+}
+function closeKey(value) {
+  $('keyModal').classList.add('hidden');
+  const waiters = keyWaiters || []; keyWaiters = null; waiters.forEach(w => w(value));
+}
+$('keyForm').onsubmit = e => { e.preventDefault(); localStorage.setItem('vbocrKey', $('keyInput').value); closeKey(true); };
+$('keyCancel').onclick = () => closeKey(false);
+async function api(path, options = {}) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const headers = Object.assign({}, options.headers || {});
+    const key = localStorage.getItem('vbocrKey');
+    if (key) headers['X-API-Key'] = key;
+    const r = await fetch(path, Object.assign({}, options, {headers}));
+    if (r.status !== 401) return r;
+    localStorage.removeItem('vbocrKey');
+    if (!(await askKey())) break;
+  }
+  throw new Error('Access key needed. Ask the person who set up VB OCR for the key.');
+}
+async function errorText(r) {
+  try { const d = await r.json(); return typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail); }
+  catch (e) { return r.statusText || ('Server error ' + r.status); }
+}
 
 /* ---------- server status ---------- */
 async function checkHealth() {
@@ -222,7 +297,8 @@ async function checkHealth() {
   try {
     const r = await fetch('/health', {cache: 'no-store'});
     const d = await r.json();
-    if (d.status === 'ok') { state = 'ok'; text = 'Ready · v' + d.version; }
+    keyRequired = !!d.key_required;
+    if (d.status === 'ok') { state = 'ok'; text = 'Ready · v' + d.version + (d.key_required ? ' · 🔒' : ''); }
     else { state = 'loading'; text = 'Loading OCR…'; }
   } catch (e) { /* offline */ }
   $('health').className = 'pill ' + state;
@@ -343,12 +419,8 @@ $('scan').onclick = async () => {
   const body = new FormData();
   pages.forEach(p => body.append('files', p.file, p.file.name));
   try {
-    const r = await fetch('/scan?format=json&mode=' + mode, {method: 'POST', body});
-    if (!r.ok) {
-      let msg = r.statusText;
-      try { const d = await r.json(); msg = typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail); } catch (e) { /* not JSON */ }
-      throw new Error(msg || ('Server error ' + r.status));
-    }
+    const r = await api('/scan?format=json&mode=' + mode, {method: 'POST', body});
+    if (!r.ok) throw new Error(await errorText(r));
     const d = await r.json();
     const names = pages.map(p => p.file.name);
     lastResults = d.invoices || [Object.assign({file: names.join(' + ')}, d)];
@@ -369,14 +441,18 @@ const num = v => { const n = parseFloat(String(v || '').replace(/,/g, '')); retu
 const money = n => n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const qtyFmt = n => n.toLocaleString('en-IN', {maximumFractionDigits: 2});
 
-function showResults(list, seconds) {
+function showResults(list, seconds, title) {
   const box = $('results'); box.innerHTML = '';
+  $('resultsHead').querySelectorAll('button:not(#downloadAll)').forEach(b => b.remove());
   const ok = list.filter(x => !x.error).length;
   $('resultsHead').classList.remove('hidden');
-  $('resultsTitle').textContent = list.length === 1 ? 'Result' : ok + ' of ' + list.length + ' invoices read';
+  $('resultsTitle').textContent = title || (list.length === 1 ? 'Result' : ok + ' of ' + list.length + ' invoices read');
   $('downloadAll').classList.toggle('hidden', list.filter(x => x.csv).length < 2);
   list.forEach((inv, i) => box.appendChild(invoiceCard(inv, i, seconds)));
 }
+
+const unsureKey = (row, field) => row + ':' + field;
+const TOTAL_TEXT = {ok: 'Matches invoice', mismatch: 'Differs!', not_found: 'Not printed', no_items: '—'};
 
 function invoiceCard(inv, index, seconds) {
   const card = el('article', 'card inv');
@@ -384,7 +460,12 @@ function invoiceCard(inv, index, seconds) {
   const title = el('div', 'inv-title');
   const supplier = inv.header && inv.header.supplier_name;
   title.appendChild(el('b', null, supplier || inv.file || 'Invoice'));
-  title.appendChild(el('small', null, inv.file + (seconds && index === 0 && lastResults.length === 1 ? ' · read in ' + Math.round(seconds) + ' s' : '')));
+  const info = [inv.file || (inv.files || []).join(' + ')];
+  if (inv.scanned) info.push('scanned ' + inv.scanned);
+  if (seconds && index === 0 && lastResults.length === 1) info.push('read in ' + Math.round(seconds) + ' s');
+  if (String(inv.source || '').includes('pdf-text')) info.push('read from the PDF text (exact)');
+  if (inv.corrected) info.push('corrected ' + inv.corrected);
+  title.appendChild(el('small', null, info.filter(Boolean).join(' · ')));
   head.appendChild(title);
 
   if (inv.error) {
@@ -395,58 +476,207 @@ function invoiceCard(inv, index, seconds) {
     card.lastChild.style.marginTop = '12px';
     return card;
   }
-  const items = inv.items || [], warnings = inv.warnings || [];
-  head.appendChild(el('span', 'chip ' + (!items.length ? 'err' : warnings.length ? 'warn' : 'ok'),
-    !items.length ? 'No items' : warnings.length ? warnings.length + ' to check' : 'Looks good'));
-  if (inv.csv) {
-    const dl = el('button', 'btn small primary', 'Download CSV'); dl.type = 'button';
-    dl.onclick = () => download(csvName(inv.file, index), '﻿' + inv.csv, 'text/csv;charset=utf-8');
-    const cp = el('button', 'btn small', 'Copy'); cp.type = 'button'; cp.title = 'Copy as a table - paste into Excel';
-    cp.onclick = async () => { try { await navigator.clipboard.writeText(csvToTsv(inv.csv)); toast('Copied - paste it into Excel'); } catch (e) { toast('Copy is not allowed here', true); } };
-    head.append(cp, dl);
-  }
+  inv.header = inv.header || {}; inv.items = inv.items || [];
+  const warnings = inv.warnings || [];
+  const unsure = new Set((inv.unsure || []).map(u => unsureKey(u.row, u.field)));
+  const chip = el('span', 'chip');
+  const setChip = () => {
+    const n = inv.items.length, left = unsure.size;
+    chip.className = 'chip ' + (!n ? 'err' : warnings.length || left ? 'warn' : 'ok');
+    chip.textContent = !n ? 'No items' : warnings.length ? warnings.length + ' to check' : left ? left + ' unsure value' + (left === 1 ? '' : 's') : 'Looks good';
+  };
+  setChip(); head.appendChild(chip);
+
+  const cp = el('button', 'btn small', 'Copy'); cp.type = 'button'; cp.title = 'Copy as a table - paste into Excel';
+  cp.onclick = async () => { try { await navigator.clipboard.writeText(csvToTsv(await currentCsv(inv))); toast('Copied - paste it into Excel'); } catch (e) { toast(e.message || 'Copy is not allowed here', true); } };
+  const dl = el('button', 'btn small primary', 'Download CSV'); dl.type = 'button';
+  dl.onclick = async () => { try { download(csvName(inv.file || inv.invoice_number || 'invoice', index), '\ufeff' + await currentCsv(inv), 'text/csv;charset=utf-8'); } catch (e) { toast(e.message, true); } };
+  head.append(cp, dl);
   card.appendChild(head);
 
-  const totalQty = items.reduce((s, it) => s + num(it.quantity), 0);
-  const totalAmt = items.reduce((s, it) => s + num(it.amount), 0);
-  const stats = el('div', 'stats');
-  [['Items', String(items.length)], ['Total quantity', qtyFmt(totalQty)], ['Total amount', '₹ ' + money(totalAmt)],
-   ['Invoice no.', (inv.header && inv.header.invoice_number) || '—']].forEach(([k, v]) => {
-    const s = el('div', 'stat'); s.append(el('small', null, k), el('b', null, v)); stats.appendChild(s);
+  // save bar (shown after the first correction)
+  const savebar = el('div', 'savebar hidden');
+  savebar.appendChild(el('span', null, 'You changed values. Download / Copy use the corrected values.'));
+  savebar.appendChild(el('span', 'spacer'));
+  if (inv.scan_id || inv.id) {
+    const save = el('button', 'btn small primary', 'Save corrections'); save.type = 'button';
+    save.onclick = async () => { try { await currentCsv(inv); toast('Corrections saved in the scan history'); } catch (e) { toast(e.message, true); } };
+    savebar.appendChild(save);
+  }
+  const markDirty = () => { inv.dirty = true; savebar.classList.remove('hidden'); updateStats(); };
+
+  // stat tiles
+  const stats = el('div', 'stats'), tiles = {};
+  [['items', 'Items'], ['qty', 'Total quantity'], ['amount', 'Total amount'], ['check', 'Printed total']].forEach(([k, label]) => {
+    const t = el('div', 'stat'); t.append(el('small', null, label), tiles[k] = el('b')); stats.appendChild(t);
   });
+  const check = inv.total_check || {};
+  function updateStats() {
+    const qty = inv.items.reduce((s, it) => s + num(it.quantity), 0);
+    const amt = inv.items.reduce((s, it) => s + num(it.amount), 0);
+    tiles.items.textContent = String(inv.items.length);
+    tiles.qty.textContent = qtyFmt(qty);
+    tiles.amount.textContent = '₹ ' + money(amt);
+    if (check.printed_total) {
+      const diff = Math.abs(num(check.printed_total) - amt);
+      const matches = diff <= 1 || check.note;
+      tiles.check.textContent = '₹ ' + money(num(check.printed_total)) + (matches ? ' ✓' : ' ✗');
+      tiles.check.style.color = matches ? 'var(--success)' : 'var(--danger)';
+      tiles.check.title = (check.label || '') + (check.note ? ' - ' + check.note : '');
+    } else { tiles.check.textContent = TOTAL_TEXT[check.status] || '—'; tiles.check.style.color = ''; }
+    if (footQty) { footQty.textContent = qtyFmt(qty); footAmt.textContent = money(amt); }
+    setChip();
+  }
   card.appendChild(stats);
 
   if (warnings.length) {
     const c = el('div', 'callout warn'); c.appendChild(el('b', null, 'Please check'));
-    const ul = el('ul'); warnings.forEach(w => ul.appendChild(el('li', null, w))); c.appendChild(ul); card.appendChild(c);
-  } else if (items.length) {
-    card.appendChild(el('div', 'callout ok', 'Compare the total amount with the total printed on the invoice.'));
+    const ul = el('ul'); warnings.forEach(w => ul.appendChild(el('li', null, w))); c.appendChild(ul);
+    (inv.duplicates || []).slice(0, 3).forEach(d => {
+      const a = el('button', 'linkbtn', 'Open the scan of ' + d.scanned); a.type = 'button'; a.style.marginRight = '12px';
+      a.onclick = () => openScan(d.id); c.appendChild(a);
+    });
+    card.appendChild(c);
+  } else if (inv.items.length) {
+    card.appendChild(el('div', 'callout ok', check.status === 'ok'
+      ? 'The items add up to the total printed on the invoice' + (check.note ? ' (' + check.note + ')' : '') + '.'
+      : 'Compare the total amount with the total printed on the invoice.'));
   }
+  card.appendChild(savebar);
 
+  // header fields (editable)
   const fields = el('div', 'fields');
   HEADER_FIELDS.forEach(([key, label]) => {
     const f = el('div', 'field'); f.appendChild(el('small', null, label));
-    const v = inv.header && inv.header[key];
-    f.appendChild(el('span', v ? null : 'none', v || '—')); fields.appendChild(f);
+    const input = cellInput(inv.header[key] || '', unsure.has(unsureKey(0, key)), value => {
+      inv.header[key] = value; unsure.delete(unsureKey(0, key)); markDirty();
+    });
+    input.placeholder = '—'; input.setAttribute('aria-label', label);
+    f.appendChild(input); fields.appendChild(f);
   });
   card.appendChild(fields);
 
-  if (items.length) {
-    const wrap = el('div', 'tablewrap'), t = el('table');
-    const hr = t.createTHead().insertRow();
-    hr.appendChild(el('th', 'n', '#'));
-    ITEM_COLUMNS.forEach(([, label, cls]) => hr.appendChild(el('th', cls === 'n' ? 'n' : null, label)));
-    const tb = t.createTBody();
-    items.forEach((it, r) => {
+  // items table (editable)
+  let footQty = null, footAmt = null;
+  const wrap = el('div', 'tablewrap'), t = el('table');
+  const hr = t.createTHead().insertRow();
+  hr.appendChild(el('th', 'n', '#'));
+  ITEM_COLUMNS.forEach(([, label, cls]) => hr.appendChild(el('th', cls === 'n' ? 'n' : null, label)));
+  hr.appendChild(el('th'));
+  const tb = t.createTBody();
+  function renderRows() {
+    tb.innerHTML = '';
+    inv.items.forEach((it, r) => {
       const tr = tb.insertRow(); tr.appendChild(el('td', 'n', String(r + 1)));
-      ITEM_COLUMNS.forEach(([key, , cls]) => tr.appendChild(el('td', cls || null, it[key] || '')));
+      ITEM_COLUMNS.forEach(([key, label, cls]) => {
+        const td = el('td', cls || null);
+        const input = cellInput(it[key] || '', unsure.has(unsureKey(r + 1, key)), value => {
+          it[key] = value; unsure.delete(unsureKey(r + 1, key)); markDirty();
+        }, cls === 'n');
+        input.setAttribute('aria-label', label + ', item ' + (r + 1));
+        td.appendChild(input); tr.appendChild(td);
+      });
+      const del = iconBtn('Delete this row', '<path d="M18 6 6 18M6 6l12 12"/>', 'del rowdel');
+      del.onclick = () => {
+        inv.items.splice(r, 1);
+        // unsure marks of later rows move up by one
+        const moved = new Set();
+        unsure.forEach(k => { const [row, f] = k.split(':'); const n = Number(row);
+          if (n === 0 || n < r + 1) moved.add(k); else if (n > r + 1) moved.add(unsureKey(n - 1, f)); });
+        unsure.clear(); moved.forEach(k => unsure.add(k));
+        renderRows(); markDirty();
+      };
+      const td = el('td'); td.appendChild(del); tr.appendChild(td);
     });
-    const fr = t.createTFoot().insertRow();
-    fr.appendChild(el('td', null, 'Total'));
-    ITEM_COLUMNS.forEach(([key]) => fr.appendChild(el('td', 'n', key === 'quantity' ? qtyFmt(totalQty) : key === 'amount' ? money(totalAmt) : '')));
-    wrap.appendChild(t); card.appendChild(wrap);
   }
+  renderRows();
+  const fr = t.createTFoot().insertRow();
+  fr.appendChild(el('td', null, 'Total'));
+  ITEM_COLUMNS.forEach(([key]) => {
+    const td = el('td', 'n'); fr.appendChild(td);
+    if (key === 'quantity') footQty = td; if (key === 'amount') footAmt = td;
+  });
+  const addTd = el('td'); fr.appendChild(addTd);
+  const add = el('button', 'linkbtn', '+ Row'); add.type = 'button'; add.title = 'Add an item the scan missed';
+  add.onclick = () => { inv.items.push(Object.fromEntries(ITEM_COLUMNS.map(([k]) => [k, '']))); renderRows(); markDirty();
+    tb.lastChild.querySelector('input').focus(); };
+  fr.firstChild.appendChild(document.createTextNode(' ')); fr.firstChild.appendChild(add);
+  wrap.appendChild(t); card.appendChild(wrap);
+
+  const legend = el('div', 'legend');
+  legend.innerHTML = '<span><i class="u"></i>The OCR was not sure: please check</span><span><i class="e"></i>Changed by you</span><span>Click any value to correct it.</span>';
+  card.appendChild(legend);
+  updateStats();
   return card;
+}
+
+function cellInput(value, isUnsure, onChange, numeric) {
+  const input = el('input', 'cellin' + (isUnsure ? ' unsure' : ''));
+  input.value = value; input.size = Math.max(4, Math.min(28, String(value).length + 1));
+  if (numeric) input.inputMode = 'decimal';
+  if (isUnsure) input.title = 'The OCR was not sure about this value. Please compare it with the invoice.';
+  input.oninput = () => { input.classList.remove('unsure'); input.classList.add('edited'); input.title = 'Changed by you'; onChange(input.value.trim()); };
+  return input;
+}
+
+/* CSV of the invoice as it is now. After corrections the server builds it again (same layout),
+   and saves the corrections in the history when the scan came from there. */
+async function currentCsv(inv) {
+  if (!inv.dirty && inv.csv) return inv.csv;
+  const r = await api('/csv', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({header: inv.header, items: inv.items, supplier_profile: inv.supplier_profile || '', scan_id: inv.scan_id || inv.id || ''})});
+  if (!r.ok) throw new Error(await errorText(r));
+  inv.csv = await r.text(); inv.dirty = false;
+  return inv.csv;
+}
+
+/* ---------- recent scans ---------- */
+let historyQuery = '', historyTimer = null;
+$('openHistory').onclick = () => showHistory();
+async function showHistory() {
+  $('resultsHead').querySelectorAll('button:not(#downloadAll)').forEach(b => b.remove());
+  $('resultsHead').classList.remove('hidden');
+  $('resultsTitle').textContent = 'Recent scans';
+  $('downloadAll').classList.add('hidden');
+  const box = $('results'); box.innerHTML = '';
+  const card = el('div', 'card history');
+  const search = el('input'); search.type = 'search'; search.placeholder = 'Search supplier, invoice number or file name'; search.value = historyQuery;
+  const list = el('div');
+  card.append(search, list); box.appendChild(card);
+  search.oninput = () => { clearTimeout(historyTimer); historyTimer = setTimeout(() => { historyQuery = search.value; load(); }, 250); };
+  async function load() {
+    list.innerHTML = '';
+    try {
+      const r = await api('/history?limit=100&q=' + encodeURIComponent(historyQuery));
+      if (!r.ok) throw new Error(await errorText(r));
+      const d = await r.json();
+      if (!d.enabled) { list.appendChild(el('p', 'hint', 'The scan history is switched off (history.enabled in settings.yaml).')); return; }
+      if (!d.scans.length) { list.appendChild(el('p', 'hint', historyQuery ? 'No scans match.' : 'No scans yet.')); return; }
+      d.scans.forEach(s => {
+        const row = el('div', 'hrow'); row.tabIndex = 0; row.setAttribute('role', 'button');
+        row.append(el('b', null, (s.supplier_name || s.files.join(', ') || 'Invoice') + (s.invoice_number ? ' · ' + s.invoice_number : '')),
+          el('span', 'amt', s.amount ? '₹ ' + money(num(s.amount)) : ''),
+          el('small', null, 'Scanned ' + s.scanned + (s.invoice_date ? ' · invoice date ' + s.invoice_date : '') + ' · ' + s.items + ' items' + (s.corrected ? ' · corrected' : '')),
+          el('small', null, s.warnings ? s.warnings + ' to check' : ''));
+        row.onclick = () => openScan(s.id);
+        row.onkeydown = e => { if (e.key === 'Enter') openScan(s.id); };
+        list.appendChild(row);
+      });
+    } catch (e) { list.appendChild(el('p', 'hint', e.message)); }
+  }
+  load(); search.focus();
+}
+async function openScan(id) {
+  try {
+    const r = await api('/history/' + encodeURIComponent(id));
+    if (!r.ok) throw new Error(await errorText(r));
+    const d = await r.json();
+    d.file = (d.files || []).join(' + ');
+    lastResults = [d];
+    showResults(lastResults, 0, 'Saved scan');
+    const back = el('button', 'btn small', '← Recent scans'); back.type = 'button'; back.onclick = () => showHistory();
+    $('resultsHead').insertBefore(back, $('resultsTitle'));
+  } catch (e) { toast(e.message, true); }
 }
 
 /* CSV -> tab-separated, so a paste into Excel fills separate columns */
@@ -477,15 +707,17 @@ function download(name, data, type) {
   const a = el('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], {type})); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
-$('downloadAll').onclick = () => {
+$('downloadAll').onclick = async () => {
   const used = {}, files = [];
-  lastResults.forEach((inv, i) => {
-    if (!inv.csv) return;
-    let name = csvName(inv.file, i), base = name.slice(0, -4), n = 1;
-    while (used[name.toLowerCase()]) name = base + '_' + (++n) + '.csv';
-    used[name.toLowerCase()] = 1; files.push([name, '﻿' + inv.csv]);
-  });
-  download('invoices.zip', makeZip(files), 'application/zip');
+  try {
+    for (const [i, inv] of lastResults.entries()) {
+      if (!inv.csv) continue;
+      let name = csvName(inv.file, i), base = name.slice(0, -4), n = 1;
+      while (used[name.toLowerCase()]) name = base + '_' + (++n) + '.csv';
+      used[name.toLowerCase()] = 1; files.push([name, '\ufeff' + await currentCsv(inv)]);
+    }
+    download('invoices.zip', makeZip(files), 'application/zip');
+  } catch (e) { toast(e.message, true); }
 };
 
 /* minimal ZIP writer (no compression) so all CSVs download as one file */

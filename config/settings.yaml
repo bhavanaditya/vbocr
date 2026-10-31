@@ -1,10 +1,16 @@
 # VB OCR settings
 # Edit this file to change how invoices are read and how the CSV is written.
 # Restart the server after saving changes.
+#
+# Settings for THIS PC only (access key, oneDNN switch) go in settings.local.yaml next to
+# this file. It overrides values here, is not stored in git, and is kept by update.bat.
 
 server:
   host: 127.0.0.1      # use 0.0.0.0 to allow other computers on the network
   port: 5000
+  # Access key for scans from other PCs. Empty = no key needed. When host is 0.0.0.0,
+  # set a key in settings.local.yaml:   server: {api_key: "some-long-secret"}
+  api_key: ""
 
 ocr:
   # Passed straight to PaddleOCR. See docs/CONFIGURATION.md for details.
@@ -18,8 +24,36 @@ ocr:
   use_textline_orientation: true
   # oneDNN = Intel CPU acceleration. Some Windows PCs fail with
   # "ConvertPirAttribute2RuntimeAttribute not support"; then VB OCR switches it off by
-  # itself (install.bat saves that here). Uncomment to force it off:
-  # enable_mkldnn: false
+  # itself, and install.bat saves "enable_mkldnn: false" in settings.local.yaml.
+
+# PDFs made by a computer (e-mailed invoices) contain real text. It is read directly:
+# faster than OCR and exact. Scanned PDFs (pictures of paper) are still read with OCR.
+pdf:
+  use_text_layer: true
+  min_characters: 40      # fewer characters on a page = treat the page as scanned
+  render_dpi: 200         # resolution for OCR of scanned PDF pages
+
+# Checks that point the user to values that need a second look.
+checks:
+  # Values the OCR read with less confidence than this (0-1) are highlighted.
+  min_confidence: 0.90
+  # Compare the sum of the item amounts with the total printed on the invoice.
+  total_labels: ["grand total", "net amount", "net total", "invoice total", "total amount",
+                 "invoice value", "net payable", "amount payable", "total"]
+  total_tolerance: 1.00   # rupees; covers round-off
+
+# Every scan is saved here (JSON + CSV), for the "Recent scans" list and duplicate warnings.
+history:
+  enabled: true
+  folder: history         # relative to the VB OCR folder
+  keep_days: 365          # older scans are deleted automatically (0 = keep forever)
+  warn_duplicates: true   # same supplier + invoice number scanned before
+
+# Optional list of your items (CSV). Fills columns the invoice does not print, for example
+# M.R.P, Size or Article ID, by matching the SKU. See config/item_master.example.csv.
+item_master:
+  file: config/item_master.csv
+  overwrite: false        # true = values from the list replace values read from the invoice
 
 output:
   date_format: "%d-%m-%Y"     # 03-01-2026. Use "%d/%m/%Y" for 03/01/2026

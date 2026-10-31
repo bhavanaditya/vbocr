@@ -9,6 +9,13 @@ Read supplier invoice photos and scans and turn them into a **purchase-entry CSV
 - **Many ways to upload:** choose files or a folder, drag and drop, paste a screenshot (Ctrl+V), or take a phone photo.
 - Works with **any supplier layout** that has an item table with a serial-number column.
 - Outputs the **exact CSV layout** of the purchase-entry Excel sheet.
+- **Digital PDFs are read exactly** from their text, in well under a second. Scanned PDFs use OCR.
+- **Points out what to check:** values the OCR was not sure about are highlighted, and the item
+  total is compared with the total printed on the invoice.
+- **Correct values on screen** before downloading; corrections are saved.
+- **Scan history** with search, and a warning when the same invoice is scanned twice.
+- Optional **item list** (CSV) fills columns the invoice does not print, such as M.R.P or Size.
+- Optional **access key** when the server is shared on the office network.
 
 Built on [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (Apache-2.0), [FastAPI](https://fastapi.tiangolo.com/) (MIT) and [Uvicorn](https://www.uvicorn.org/) (BSD).
 

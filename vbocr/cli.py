@@ -75,13 +75,14 @@ def _run(args) -> int:
         engine = OcrEngine(settings.ocr)
         lines = engine.self_test()
         if engine.mkldnn_fallback:
-            _save_mkldnn_off(settings.config_dir / "settings.yaml")
+            _save_mkldnn_off(settings.local_settings_path)
         print("OCR models are ready (test read {} lines).".format(lines), file=sys.stderr)
         return 0
 
     if args.command == "serve":
         from .server import run
 
+        _log_to_file_without_console()
         run(settings, host=args.host, port=args.port)
         return 0
 
@@ -174,21 +175,42 @@ def expand_inputs(names: List[str]) -> Tuple[List[str], bool, List[str]]:
 
 
 def _save_mkldnn_off(path: Path) -> None:
-    """Write 'enable_mkldnn: false' under 'ocr:' so the server does not hit the oneDNN
-    bug (and the slow retry) on every start. Edits the text to keep the comments."""
-    import re
+    """Save 'ocr: enable_mkldnn: false' in settings.local.yaml (this PC only), so the
+    server does not hit the oneDNN bug (and the slow retry) on every start."""
+    import yaml
 
-    text = path.read_text(encoding="utf-8")
-    if re.search(r"^\s+enable_mkldnn\s*:", text, re.M):
-        text = re.sub(r"^(\s+enable_mkldnn\s*:).*$", r"\1 false", text, count=1, flags=re.M)
-    else:
-        text = re.sub(
-            r"^ocr:[^\n]*\n",
-            lambda m: m.group(0) + "  enable_mkldnn: false   # set by setup: oneDNN fails on this PC's CPU\n",
-            text, count=1, flags=re.M,
-        )
+    data = {}
+    if path.exists():
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data.setdefault("ocr", {})["enable_mkldnn"] = False
+    text = "# Settings for this PC only. They override settings.yaml and are kept by update.bat.\n"
+    text += yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")
     print("This PC's CPU needs oneDNN switched off; saved enable_mkldnn: false in {}".format(path), file=sys.stderr)
+
+
+def _log_to_file_without_console() -> None:
+    """pythonw.exe (server started hidden by the VB.NET app or at Windows start-up) has no
+    console: write the output to logs/server.log so problems can be looked up."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        log_dir = ROOT_DIR / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "server.log"
+        if log_file.exists() and log_file.stat().st_size > 5 * 1024 * 1024:
+            log_file.replace(log_dir / "server.old.log")
+        stream = open(log_file, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return
+    sys.stdout = sys.stdout or stream
+    sys.stderr = sys.stderr or stream
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    root.addHandler(handler)
 
 
 def _default_output(name: str, as_json: bool) -> str:

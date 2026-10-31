@@ -27,3 +27,9 @@ models/
 
 # Error details written by the command line
 logs/
+
+# Per-PC settings, scan history and the item list (business data)
+config/settings.local.yaml
+config/item_master.csv
+history/
+!config/item_master.example.csv

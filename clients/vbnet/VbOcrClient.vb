@@ -58,6 +58,70 @@ Public Class VbOcrResult
     Public SourceFile As String = ""
     ''' <summary>ScanEach only: why this file failed. Empty when it worked.</summary>
     Public ErrorMessage As String = ""
+    ''' <summary>Values the OCR was not sure about. Show them to the user to check.</summary>
+    Public UnsureCells As New List(Of VbOcrCell)
+    ''' <summary>Items total compared with the total printed on the invoice:
+    ''' "ok", "mismatch", "not_found", "no_items" or "" (old server / no check).</summary>
+    Public TotalCheck As String = ""
+    ''' <summary>Sum of the item amounts, as text (e.g. "4741.10").</summary>
+    Public ItemsTotal As String = ""
+    ''' <summary>Total printed on the invoice, as text. Empty when not found.</summary>
+    Public PrintedTotal As String = ""
+    ''' <summary>ID of this scan in the server's scan history (empty when history is off).</summary>
+    Public ScanId As String = ""
+    ''' <summary>"ocr" or "pdf-text" (read exactly from a digital PDF).</summary>
+    Public Source As String = ""
+
+    ''' <summary>True when the OCR was not sure about this value. row 0 = a header value,
+    ''' 1 = first item row. title = CSV column title, e.g. "Quantity".</summary>
+    Public Function IsUnsure(ByVal row As Integer, ByVal title As String) As Boolean
+        For Each cell As VbOcrCell In UnsureCells
+            If cell.Row = row AndAlso String.Equals(cell.Title, title, StringComparison.OrdinalIgnoreCase) Then Return True
+        Next
+        Return False
+    End Function
+
+    ''' <summary>True when the items add up to a different total than the invoice prints.</summary>
+    Public Function TotalMismatch() As Boolean
+        Return TotalCheck = "mismatch"
+    End Function
+
+    ' X-VBOCR-Unsure: "Invoice Number;3:Quantity" = a header value and the quantity of item 3
+    Friend Sub ReadHeaders(ByVal headers As WebHeaderCollection)
+        Integer.TryParse(headers("X-VBOCR-Item-Count"), ItemCount)
+        If headers("X-VBOCR-Warnings") IsNot Nothing Then Warnings = headers("X-VBOCR-Warnings")
+        If headers("X-VBOCR-Scan-Id") IsNot Nothing Then ScanId = headers("X-VBOCR-Scan-Id")
+        If headers("X-VBOCR-Source") IsNot Nothing Then Source = headers("X-VBOCR-Source")
+        Dim check As String = headers("X-VBOCR-Total-Check")
+        If check IsNot Nothing Then
+            Dim parts() As String = check.Split("|"c)
+            TotalCheck = parts(0)
+            If parts.Length > 1 Then ItemsTotal = parts(1)
+            If parts.Length > 2 Then PrintedTotal = parts(2)
+        End If
+        Dim unsure As String = headers("X-VBOCR-Unsure")
+        If unsure IsNot Nothing Then
+            For Each part As String In unsure.Split(New Char() {";"c}, StringSplitOptions.RemoveEmptyEntries)
+                Dim cell As New VbOcrCell()
+                Dim colon As Integer = part.IndexOf(":"c)
+                Dim rowNumber As Integer
+                If colon > 0 AndAlso Integer.TryParse(part.Substring(0, colon), rowNumber) Then
+                    cell.Row = rowNumber
+                    cell.Title = part.Substring(colon + 1)
+                Else
+                    cell.Title = part
+                End If
+                UnsureCells.Add(cell)
+            Next
+        End If
+    End Sub
+End Class
+
+''' <summary>One value of the invoice: Row 0 = header value, 1 = first item row.</summary>
+Public Class VbOcrCell
+    Public Row As Integer
+    ''' <summary>CSV column title, e.g. "Invoice Number" or "Quantity".</summary>
+    Public Title As String = ""
 End Class
 
 ''' <summary>Talks to the VB OCR server. All methods are synchronous: call them from a
@@ -72,6 +136,7 @@ Public Class VbOcrClient
 
     Private ReadOnly _baseUrl As String
     Private _timeoutSeconds As Integer = 300
+    Private _apiKey As String = ""
 
     Public Sub New()
         Me.New(DefaultServerUrl)
@@ -88,6 +153,18 @@ Public Class VbOcrClient
         End Get
         Set(ByVal value As Integer)
             _timeoutSeconds = value
+        End Set
+    End Property
+
+    ''' <summary>Access key, when the server has server.api_key set (needed when the
+    ''' server is shared on the network). Empty = no key.</summary>
+    Public Property ApiKey() As String
+        Get
+            Return _apiKey
+        End Get
+        Set(ByVal value As String)
+            If value Is Nothing Then value = ""
+            _apiKey = value.Trim()
         End Set
     End Property
 
@@ -178,8 +255,7 @@ Public Class VbOcrClient
                 Throw New VbOcrException("Unsupported file type: " & Path.GetFileName(filePaths(i)) & _
                     ". Use jpg, png, bmp, tif, webp, gif or pdf.")
             End If
-            ' Send a plain ASCII name; only the extension matters to the server.
-            Dim name As String = "page" & (i + 1).ToString(CultureInfo.InvariantCulture) & Path.GetExtension(filePaths(i)).ToLowerInvariant()
+            Dim name As String = SentName(i, filePaths(i))
             WriteAscii(body, "--" & boundary & vbCrLf & _
                 "Content-Disposition: form-data; name=""files""; filename=""" & name & """" & vbCrLf & _
                 "Content-Type: application/octet-stream" & vbCrLf & vbCrLf)
@@ -201,9 +277,7 @@ Public Class VbOcrClient
             End Using
             Using response As HttpWebResponse = CType(request.GetResponse(), HttpWebResponse)
                 result.Csv = ReadBody(response)
-                Integer.TryParse(response.Headers("X-VBOCR-Item-Count"), result.ItemCount)
-                Dim warnings As String = response.Headers("X-VBOCR-Warnings")
-                If warnings IsNot Nothing Then result.Warnings = warnings
+                result.ReadHeaders(response.Headers)
             End Using
         Catch ex As WebException
             Dim errorResponse As HttpWebResponse = TryCast(ex.Response, HttpWebResponse)
@@ -212,11 +286,13 @@ Public Class VbOcrClient
                     ". Start it with start-server.bat or EnsureServerRunning. (" & ex.Message & ")", ex)
             End If
             Dim message As String = ServerErrorText(ReadBody(errorResponse))
-            ' The files are sent as page1.jpg, page2.png, ...: show the user's file names instead.
+            ' Names with other characters are sent in plain ASCII: show the user's file names instead.
             For i As Integer = filePaths.Length - 1 To 0 Step -1
-                Dim sentName As String = "page" & (i + 1).ToString(CultureInfo.InvariantCulture) & Path.GetExtension(filePaths(i)).ToLowerInvariant()
-                message = message.Replace(sentName, Path.GetFileName(filePaths(i)))
+                message = message.Replace(SentName(i, filePaths(i)), Path.GetFileName(filePaths(i)))
             Next
+            If errorResponse.StatusCode = HttpStatusCode.Unauthorized Then
+                Throw New VbOcrException(message & " (Set VbOcrClient.ApiKey to the key in the server's config\settings.local.yaml.)", ex)
+            End If
             Throw New VbOcrException("VB OCR server error " & CInt(errorResponse.StatusCode).ToString(CultureInfo.InvariantCulture) & ": " & message, ex)
         End Try
 
@@ -313,12 +389,29 @@ Public Class VbOcrClient
         request.Proxy = Nothing   ' never send local requests through the office proxy
         request.Timeout = timeoutSeconds * 1000
         request.ReadWriteTimeout = timeoutSeconds * 1000
+        If _apiKey.Length > 0 Then request.Headers("X-API-Key") = _apiKey
         Try
             request.ServicePoint.Expect100Continue = False   ' avoids a delay on .NET Framework
         Catch ex As NotSupportedException
             ' .NET 6/8: not needed
         End Try
         Return request
+    End Function
+
+    ' The file name as sent to the server (plain ASCII, so the multipart header stays valid).
+    ' Shown in the scan history; only the extension matters for reading.
+    Private Shared Function SentName(ByVal index As Integer, ByVal filePath As String) As String
+        Dim sb As New StringBuilder()
+        For Each c As Char In Path.GetFileNameWithoutExtension(filePath)
+            If AscW(c) >= 32 AndAlso AscW(c) < 127 AndAlso c <> """"c AndAlso c <> "\"c Then
+                sb.Append(c)
+            Else
+                sb.Append("_"c)
+            End If
+        Next
+        Dim stem As String = sb.ToString().Trim()
+        If stem.Replace("_", "").Length = 0 Then stem = "page" & (index + 1).ToString(CultureInfo.InvariantCulture)
+        Return stem & Path.GetExtension(filePath).ToLowerInvariant()
     End Function
 
     Private Shared Function ReadBody(ByVal response As HttpWebResponse) As String

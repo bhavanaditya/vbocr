@@ -63,6 +63,17 @@ def clean_number(text: str) -> str:
     return match.group(0) if match else ""
 
 
+def number_was_fixed(text: str) -> bool:
+    """True when a number only became readable by turning letters into digits (O -> 0, ...),
+    a sign that the OCR may have misread it."""
+    if not text or not re.search(r"\d", text):
+        return False
+    lookalike = "OoDIl|S"
+    text = re.sub(r"(?i)^\W*(?:rs\.?|inr|\u20b9)\s*", "", text.strip())
+    core = re.sub(r"^[^\d{0}]+|[^\d{0}]+$".format(re.escape(lookalike)), "", text.strip())
+    return bool(re.search("[{}]".format(re.escape(lookalike)), core))
+
+
 def to_float(text: str) -> float:
     try:
         return float(clean_number(text))

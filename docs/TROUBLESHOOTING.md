@@ -76,6 +76,22 @@ handles it automatically: it retries without oneDNN and prints
 The command line saves the full error in `logs\last-error.txt` in the VB OCR folder. Send that
 file when asking for help.
 
+A server started hidden (by the VB.NET app, `autostart-on.bat` or Task Scheduler) writes its
+output to `logs\server.log` (the previous one is kept as `server.old.log`).
+
+### "Access key missing or wrong"
+
+The server has `server.api_key` set. Enter the key in the browser page when it asks, or set
+`VbOcrClient.ApiKey` / `VbOcrScanForm.ApiKey` in the VB.NET app. The key is in
+`config\settings.local.yaml` on the server PC.
+
+### "Printed total ✗" / "Total check: the items add up to … but the invoice shows …"
+
+The item amounts do not add up to the total printed on the invoice. Usually a row was missed
+(fold, shadow, cut-off photo) or a digit misread. Compare the rows with the invoice, correct or add
+the row, and the tile turns ✓. If the printed total includes freight or other charges, the warning
+can be ignored.
+
 ## Scan results
 
 ### PNG / screenshot gives no text or a black image

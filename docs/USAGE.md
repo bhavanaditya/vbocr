@@ -57,9 +57,22 @@ See [CONFIGURATION.md](CONFIGURATION.md#ocr-model-size) to trade speed against a
 3. Add the files: **Files**, **Folder**, **Camera**, drag and drop, or paste an image with Ctrl+V.
    Change the order with the arrows or by dragging a page, remove pages with ✕.
 4. Choose whether the files are **pages of one invoice** or **separate invoices**.
-5. Click **Scan**. The results appear on the right: item count, total quantity and total amount,
-   the invoice details, the item table and anything to check. Use **Download CSV** or **Copy**
-   (paste straight into Excel) on each invoice, or **Download all (ZIP)** for separate invoices.
+5. Click **Scan**. The results appear on the right: item count, total quantity, total amount and
+   the **printed total** (✓ when the items add up to the total on the invoice, ✗ when a row is
+   probably missing or misread), the invoice details, the item table and anything to check.
+6. **Check and correct.** Values the OCR was not sure about have an **amber** background. Click any
+   value to change it; changed values get a blue mark and the totals update. Delete a wrong row
+   with ✕, add a missing one with **+ Row**. **Save corrections** stores them in the scan history.
+7. Use **Download CSV** or **Copy** (paste straight into Excel) on each invoice, or **Download all
+   (ZIP)** for separate invoices. These always use your corrected values.
+
+**Recent scans** (top right) lists earlier scans, newest first, with a search box (supplier,
+invoice number or file name). Click one to open it, correct it again or download its CSV.
+When the same supplier and invoice number was scanned before, the result says
+"Already scanned on …" with links to the earlier scans.
+
+When the server has an access key (see [CONFIGURATION.md](CONFIGURATION.md#server)), the page asks
+for it once and remembers it in this browser.
 
 The status in the top right shows whether the server is **Ready**, still **Loading** the OCR
 engine, or **offline**. The page follows the Windows light / dark setting.
@@ -126,12 +139,16 @@ Warnings (for example `Item 3: missing quantity`) are printed to the error outpu
 
 Base URL: `http://127.0.0.1:5000` (change it in `config/settings.yaml`).
 
+**Access key.** When `server.api_key` is set, every request except `/` and `/health` needs the key
+in the header `X-API-Key: <key>` (or `?key=<key>` in the URL). Without it the server answers `401`.
+
 ### `GET /health`
 
-Shows whether the server is ready.
+Shows whether the server is ready. `status` is `loading` while the OCR engine starts; other
+requests then answer `503`.
 
 ```json
-{"status": "ok", "version": "1.0.0"}
+{"status": "ok", "version": "1.0.0", "key_required": false}
 ```
 
 ### `POST /scan`
@@ -162,6 +179,10 @@ file that failed, and `summary.json`. The headers below are only sent in `pages`
 |---|---|
 | `X-VBOCR-Item-Count` | Number of item rows found |
 | `X-VBOCR-Warnings` | Problems found, separated by ` \| `. Only present when there are warnings |
+| `X-VBOCR-Unsure` | Values the OCR was not sure about, separated by `;`. `Invoice Number` = a header value, `3:Quantity` = the quantity of item 3 |
+| `X-VBOCR-Total-Check` | `status\|items total\|printed total`, e.g. `mismatch\|4741.10\|5743.10`. Status: `ok`, `mismatch`, `not_found`, `no_items` |
+| `X-VBOCR-Scan-Id` | ID of the scan in the history (when history is on) |
+| `X-VBOCR-Source` | `ocr`, or `pdf-text` when every page was read from a digital PDF's text |
 
 **Status codes**
 
@@ -169,6 +190,7 @@ file that failed, and `summary.json`. The headers below are only sent in `pages`
 |---|---|
 | `200` | Scanned (check `X-VBOCR-Item-Count` and warnings) |
 | `400` | Unsupported file type, or the image file is damaged |
+| `401` | Access key missing or wrong |
 | `413` | File larger than 25 MB |
 | `422` | No file sent, or wrong `format` value |
 | `500` | Unexpected error. See the server window for details |
@@ -213,11 +235,38 @@ curl -F "files=@bill1.jpg" -F "files=@bill2.png" "http://127.0.0.1:5000/scan?mod
   ],
   "supplier_profile": "Sample Garments Pvt Ltd",
   "warnings": [],
+  "unsure": [{"row": 0, "field": "invoice_number"}, {"row": 3, "field": "quantity"}],
+  "total_check": {"status": "ok", "items_total": "4741.10", "printed_total": "4741.10",
+                  "label": "Grand Total", "note": ""},
+  "scan_id": "20260131-101502-123-SG-25-26-0042",
+  "duplicates": [],
+  "source": "ocr",
   "csv": ",Date,Supplier Name,..."
 }
 ```
 
 `supplier_profile` is the name of the matching profile in `config/suppliers.yaml`, or empty when the
 supplier is unknown. `csv` is the same text that `format=csv` returns. All values are strings. Numbers have thousands separators removed.
+In `unsure`, row `0` is a header value and `1` the first item. `duplicates` lists earlier scans of
+the same supplier and invoice number (`id`, `scanned`).
+
+### `POST /csv`
+
+Turns a JSON invoice (`header` and `items` as above, for example after the user corrected values)
+into the purchase-entry CSV. When the JSON has the `scan_id` of a scan, the corrections are also
+saved in the scan history.
+
+```bat
+curl -H "Content-Type: application/json" -d @invoice.json http://127.0.0.1:5000/csv -o invoice.csv
+```
+
+### `GET /history`
+
+Recent scans, newest first: `{"enabled": true, "scans": [{"id", "scanned", "supplier_name",
+"invoice_number", "invoice_date", "items", "amount", "warnings", "files", "corrected"}, ...]}`.
+Query `limit` (default 50, max 500) and `q` (search supplier, invoice number, file name).
+
+`GET /history/{id}` returns one saved scan (the JSON above plus `files`, `scanned`, `csv`), and
+`GET /history/{id}.csv` its CSV.
 
 Interactive API documentation is available at <http://127.0.0.1:5000/docs> while the server is running.

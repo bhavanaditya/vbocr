@@ -12,3 +12,6 @@ python-multipart>=0.0.9
 
 # Config files (MIT)
 PyYAML>=6.0
+
+# Digital PDFs: exact text layer, and page images for scanned PDFs (Apache-2.0 / BSD-3)
+pypdfium2>=4.0

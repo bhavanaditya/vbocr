@@ -36,8 +36,9 @@ MAX_IMAGE_SIDE = 4000
 class OcrEngine:
     """Loads PaddleOCR once and reuses it. PaddleOCR is not thread-safe, so calls are serialised."""
 
-    def __init__(self, options: Optional[Dict[str, Any]] = None):
+    def __init__(self, options: Optional[Dict[str, Any]] = None, pdf_options: Optional[Dict[str, Any]] = None):
         self._options = dict(options or {})
+        self._pdf = dict(pdf_options or {})
         self._lock = threading.Lock()
         self.mkldnn_fallback = False  # True after oneDNN failed and was switched off
         self._ocr = self._create(self._options)
@@ -51,11 +52,24 @@ class OcrEngine:
 
     def read(self, path: str) -> List[Page]:
         """Read an image or PDF. Returns one Page per image / PDF page / TIFF frame."""
-        inputs = load_inputs(path)
+        if Path(path).suffix.lower() in PDF_EXTENSIONS:
+            from .pdf import read_pdf
+
+            parts = read_pdf(
+                str(path),
+                use_text_layer=bool(self._pdf.get("use_text_layer", True)),
+                min_characters=int(self._pdf.get("min_characters", 40)),
+                render_dpi=int(self._pdf.get("render_dpi", 200)),
+            )
+        else:
+            parts = [("image", frame) for frame in load_inputs(path)]
         pages = []
         with self._lock:
-            for item in inputs:
-                pages.extend(_to_page(result) for result in self._predict(item))
+            for kind, item in parts:
+                if kind == "text":
+                    pages.append(item)
+                else:
+                    pages.extend(_to_page(result) for result in self._predict(item))
         return pages
 
     def _predict(self, item: Any) -> List[Any]:
@@ -110,7 +124,7 @@ def load_inputs(path: str) -> List[Any]:
     """
     suffix = Path(path).suffix.lower()
     if suffix in PDF_EXTENSIONS:
-        return [str(path)]
+        return [str(path)]  # OcrEngine.read handles PDFs page by page (see pdf.py)
     if suffix not in IMAGE_EXTENSIONS:
         raise ValueError(
             "Unsupported file type '{}'. Supported: {}".format(

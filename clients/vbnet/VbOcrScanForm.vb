@@ -43,6 +43,8 @@ Public Class VbOcrScanForm
     Public InstallFolder As String = VbOcrClient.DefaultInstallFolder
     ''' <summary>Server address. Change it when VB OCR runs on another PC.</summary>
     Public ServerUrl As String = VbOcrClient.DefaultServerUrl
+    ''' <summary>Access key, when the server has server.api_key set. Empty = no key.</summary>
+    Public ApiKey As String = ""
     ''' <summary>Optional: files to scan as soon as the dialog opens.</summary>
     Public FilesToScan() As String
 
@@ -74,6 +76,9 @@ Public Class VbOcrScanForm
     End Enum
 
     Private _invoice As VbOcrInvoice
+    Private _printedTotal As Decimal = -1D
+    ' Values the OCR was not sure about: item row -> column titles. Cleared when the user edits them.
+    Private ReadOnly _unsureItems As New Dictionary(Of DataRow, List(Of String))
     Private _scanStarted As DateTime
     Private ReadOnly _tempFiles As New List(Of String)
     Private ReadOnly _worker As New BackgroundWorker()
@@ -105,7 +110,7 @@ Public Class VbOcrScanForm
     Private ReadOnly _statItems As New Label()
     Private ReadOnly _statQty As New Label()
     Private ReadOnly _statAmount As New Label()
-    Private ReadOnly _statPages As New Label()
+    Private ReadOnly _statPrinted As New Label()
     Private ReadOnly _results As New Panel()
     Private ReadOnly _empty As New Label()
     Private ReadOnly _gridHeader As New DataGridView()
@@ -388,7 +393,7 @@ Public Class VbOcrScanForm
         stats.Controls.Add(StatTile("Items", _statItems), 0, 0)
         stats.Controls.Add(StatTile("Total quantity", _statQty), 1, 0)
         stats.Controls.Add(StatTile("Total amount", _statAmount), 2, 0)
-        stats.Controls.Add(StatTile("Pages", _statPages), 3, 0)
+        stats.Controls.Add(StatTile("Printed total", _statPrinted), 3, 0)
 
         ' Results card: header values (left) and items (below)
         _results.Dock = DockStyle.Fill
@@ -421,7 +426,9 @@ Public Class VbOcrScanForm
         hint.ForeColor = Text2
         hint.Padding = New Padding(16)
         hint.Text = "Before you click ""Use these values"":" & vbCrLf & vbCrLf & _
-            "1.  Compare Total amount with the total printed on the invoice." & vbCrLf & _
+            "1.  Printed total shows a tick when the items add up to the invoice total." & vbCrLf & _
+            "     A cross means a row is missing or misread." & vbCrLf & _
+            "     Amber values: the OCR was not sure. Check them first." & vbCrLf & _
             "2.  Check the supplier, invoice number and date." & vbCrLf & _
             "3.  Correct any value by clicking on it. Totals update as you type." & vbCrLf & _
             "4.  Delete a wrong item row: select it and press Delete." & vbCrLf & vbCrLf & _
@@ -463,6 +470,8 @@ Public Class VbOcrScanForm
         outer.Controls.Add(_banner)
 
         AddHandler _gridItems.CellEndEdit, AddressOf ItemsEdited
+        AddHandler _gridItems.CellFormatting, AddressOf ItemsCellFormatting
+        AddHandler _gridHeader.CellEndEdit, AddressOf HeaderEdited
         AddHandler _gridItems.UserDeletedRow, AddressOf ItemsDeleted
         Return outer
     End Function
@@ -937,6 +946,7 @@ Public Class VbOcrScanForm
     Private Sub WorkerDoWork(ByVal sender As Object, ByVal e As DoWorkEventArgs)
         Dim pages() As String = CType(e.Argument, String())
         Dim client As New VbOcrClient(ServerUrl)
+        client.ApiKey = ApiKey
         If Not client.IsReady() Then
             If Not IsLocalServer() Then
                 Throw New VbOcrException("The VB OCR server at " & ServerUrl & " is not running.")
@@ -964,20 +974,36 @@ Public Class VbOcrScanForm
 
         _gridHeader.Rows.Clear()
         For Each title As String In VbOcrInvoice.HeaderTitles
-            _gridHeader.Rows.Add(title, _invoice.GetHeader(title))
+            Dim index As Integer = _gridHeader.Rows.Add(title, _invoice.GetHeader(title))
+            If result.IsUnsure(0, title) Then _gridHeader.Rows(index).Cells(1).Style.BackColor = WarningSoft
         Next
+        _unsureItems.Clear()
+        For Each cell As VbOcrCell In result.UnsureCells
+            If cell.Row >= 1 AndAlso cell.Row <= _invoice.Items.Rows.Count Then
+                Dim row As DataRow = _invoice.Items.Rows(cell.Row - 1)
+                If Not _unsureItems.ContainsKey(row) Then _unsureItems.Add(row, New List(Of String))
+                _unsureItems(row).Add(cell.Title)
+            End If
+        Next
+        _printedTotal = -1D
+        If result.PrintedTotal.Length > 0 Then _printedTotal = VbOcrInvoice.ToDecimal(result.PrintedTotal)
         _gridItems.DataSource = _invoice.Items
         FormatItemColumns()
         _empty.Visible = False
-        _statPages.Text = _lstFiles.Items.Count.ToString()
         UpdateTotals()
 
         Dim count As Integer = _invoice.Items.Rows.Count
         _btnOk.Enabled = count > 0
         If count = 0 Then
             SetStatus(Tone.Bad, "No items found. " & result.Warnings & "  Try a sharper, straighter photo of the whole page.")
-        ElseIf result.Warnings.Length > 0 Then
-            SetStatus(Tone.Warn, "Please check: " & result.Warnings)
+        ElseIf result.Warnings.Length > 0 OrElse result.UnsureCells.Count > 0 Then
+            Dim message As String = "Please check: "
+            If result.UnsureCells.Count > 0 Then
+                message &= result.UnsureCells.Count.ToString() & " value(s) the OCR was not sure about (amber). "
+            End If
+            SetStatus(Tone.Warn, message & result.Warnings)
+        ElseIf result.Source = "pdf-text" Then
+            SetStatus(Tone.Good, count.ToString() & " items read exactly from the PDF text. Check the values, then click ""Use these values"".")
         Else
             SetStatus(Tone.Good, count.ToString() & " items read in " & seconds.ToString() & " s. Compare the total amount with the invoice, then click ""Use these values"".")
         End If
@@ -1004,8 +1030,36 @@ Public Class VbOcrScanForm
     End Sub
 
     Private Sub ItemsEdited(ByVal sender As Object, ByVal e As DataGridViewCellEventArgs)
+        ' A value the user corrected is no longer "not sure".
+        Dim row As DataRow = BoundRow(e.RowIndex)
+        If row IsNot Nothing AndAlso _unsureItems.ContainsKey(row) Then
+            _unsureItems(row).Remove(_gridItems.Columns(e.ColumnIndex).Name)
+            _gridItems.InvalidateRow(e.RowIndex)
+        End If
         UpdateTotals()
     End Sub
+
+    Private Sub HeaderEdited(ByVal sender As Object, ByVal e As DataGridViewCellEventArgs)
+        _gridHeader.Rows(e.RowIndex).Cells(e.ColumnIndex).Style.BackColor = Color.Empty
+    End Sub
+
+    ' Amber background for item values the OCR was not sure about.
+    Private Sub ItemsCellFormatting(ByVal sender As Object, ByVal e As DataGridViewCellFormattingEventArgs)
+        If e.RowIndex < 0 OrElse e.ColumnIndex < 0 OrElse _unsureItems.Count = 0 Then Return
+        Dim row As DataRow = BoundRow(e.RowIndex)
+        If row Is Nothing OrElse Not _unsureItems.ContainsKey(row) Then Return
+        If _unsureItems(row).Contains(_gridItems.Columns(e.ColumnIndex).Name) Then
+            e.CellStyle.BackColor = WarningSoft
+            e.CellStyle.SelectionBackColor = Color.FromArgb(253, 230, 138)
+        End If
+    End Sub
+
+    Private Function BoundRow(ByVal rowIndex As Integer) As DataRow
+        If rowIndex < 0 OrElse rowIndex >= _gridItems.Rows.Count Then Return Nothing
+        Dim view As DataRowView = TryCast(_gridItems.Rows(rowIndex).DataBoundItem, DataRowView)
+        If view Is Nothing Then Return Nothing
+        Return view.Row
+    End Function
 
     Private Sub ItemsDeleted(ByVal sender As Object, ByVal e As DataGridViewRowEventArgs)
         UpdateTotals()
@@ -1026,6 +1080,19 @@ Public Class VbOcrScanForm
         _statItems.Text = count.ToString()
         _statQty.Text = qty.ToString("#,##0.##", india)
         _statAmount.Text = ChrW(&H20B9) & " " & amount.ToString("#,##0.00", india)
+
+        ' Printed total: tick when the items add up to it (also with 3/5/12/18/28 % GST added).
+        If _printedTotal < 0D Then
+            _statPrinted.Text = "not found"
+            _statPrinted.ForeColor = Muted
+        Else
+            Dim matches As Boolean = False
+            For Each factor As Decimal In New Decimal() {1D, 1.05D, 1.12D, 1.18D, 1.28D, 1.03D}
+                If Math.Abs(amount * factor - _printedTotal) <= 1D Then matches = True
+            Next
+            _statPrinted.Text = ChrW(&H20B9) & " " & _printedTotal.ToString("#,##0.00", india) & "  " & If(matches, ChrW(&H2713), ChrW(&H2717))
+            _statPrinted.ForeColor = If(matches, Success, Danger)
+        End If
     End Sub
 
     Private Sub OkClicked(ByVal sender As Object, ByVal e As EventArgs)

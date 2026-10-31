@@ -91,11 +91,12 @@ def test_expand_inputs_folders_wildcards_and_missing(tmp_path):
     assert len(files) == 1 and not has_folder and missing == ["nope.png"]
 
 
-def test_save_mkldnn_off_keeps_comments(tmp_path):
-    path = tmp_path / "settings.yaml"
-    path.write_text("server:\n  port: 5000\n\nocr:\n  # model\n  lang: en\n  # enable_mkldnn: false\n", encoding="utf-8")
+def test_save_mkldnn_off_writes_local_settings(tmp_path):
+    import yaml
+
+    path = tmp_path / "settings.local.yaml"
+    path.write_text("server:\n  api_key: secret\n", encoding="utf-8")
     _save_mkldnn_off(path)
-    _save_mkldnn_off(path)  # running install twice must not add it twice
-    text = path.read_text(encoding="utf-8")
-    assert text.count("\n  enable_mkldnn: false") == 1
-    assert "# model" in text and "# enable_mkldnn: false" in text
+    _save_mkldnn_off(path)  # running install twice must not break anything
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data == {"server": {"api_key": "secret"}, "ocr": {"enable_mkldnn": False}}

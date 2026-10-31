@@ -119,7 +119,11 @@ You can start the server yourself, let the VB.NET app start it, or have Windows 
 The scan dialog (`VbOcrScanForm`) and `VbOcrClient.EnsureServerRunning("C:\vbocr")` start the server in the background
 when it is not running. See [VBNET_INTEGRATION.md](VBNET_INTEGRATION.md). This is the simplest option.
 
-**Option B: start at Windows log-on with Task Scheduler.**
+**Option B: double-click `autostart-on.bat`.**
+The server then starts hidden every time you log on to Windows (and right away).
+`autostart-off.bat` undoes it. Output goes to `logs\server.log`.
+
+**Option C: start at Windows log-on with Task Scheduler** (for example to run before anyone logs on).
 
 1. Open **Task Scheduler** → **Create Task…**
 2. **General** tab: name `VB OCR`, select *Run only when user is logged on*.
@@ -138,13 +142,16 @@ when it is not running. See [VBNET_INTEGRATION.md](VBNET_INTEGRATION.md). This i
 
 To run VB OCR on one PC and scan from several PCs:
 
-1. In `config\settings.yaml`, set:
+1. Create `config\settings.local.yaml` with:
 
    ```yaml
    server:
      host: 0.0.0.0
      port: 5000
+     api_key: "a-long-secret-only-your-office-knows"
    ```
+
+   With the key, other PCs can only scan or see the scan history when they know it.
 
 2. Allow the port through Windows Firewall (Command Prompt **as Administrator**):
 
@@ -153,23 +160,26 @@ To run VB OCR on one PC and scan from several PCs:
    ```
 
 3. In the VB.NET app, use the server PC's address:
-   `New VbOcrClient("http://192.168.1.20:5000")` (or set `ServerUrl` on `VbOcrScanForm`)
+   `New VbOcrClient("http://192.168.1.20:5000")` and `client.ApiKey = "..."`
+   (or set `ServerUrl` and `ApiKey` on `VbOcrScanForm`). In the browser, open
+   `http://192.168.1.20:5000`; it asks for the key once.
 
-> The server has no login. Only open it on a trusted office network, never to the internet.
+> The traffic is plain HTTP. Only open the server on a trusted office network, never to the internet.
 
 ## Updating
 
-```bat
-cd C:\vbocr
-git pull
-install.bat
-```
+Double-click **`update.bat`**. It stops a running server, downloads the newest version
+(`git pull`, when the folder was installed with git), updates the Python packages and runs the
+test read again. Then start the server again.
 
-If you used the ZIP download, extract the new ZIP over the old folder. **Keep your
-`config\settings.yaml` and `config\suppliers.yaml`**, or back them up first. Then run `install.bat` again.
+Your `config\settings.local.yaml`, `config\item_master.csv` and `history` folder are kept.
+If you changed `config\settings.yaml` or `config\suppliers.yaml` yourself, back them up first
+(and move your settings to `settings.local.yaml`, which updates never touch).
 
-`install.bat` ends with a test read. On PCs where PaddlePaddle's oneDNN acceleration fails, it
-prints `saved enable_mkldnn: false` and writes that setting into `config\settings.yaml`.
+If you used the ZIP download, extract the new ZIP over the old folder, then run `update.bat`.
+
+The test read at the end checks PaddlePaddle's oneDNN acceleration. On PCs where it fails, it
+prints `saved enable_mkldnn: false` and writes that setting into `config\settings.local.yaml`.
 
 ## Uninstalling
 

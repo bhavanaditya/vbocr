@@ -6,6 +6,8 @@ All settings are in the `config` folder:
 |---|---|
 | `config/settings.yaml` | General settings: server, OCR model, output format, column names |
 | `config/suppliers.yaml` | Per-supplier adjustments, see [ADDING_SUPPLIERS.md](ADDING_SUPPLIERS.md) |
+| `config/settings.local.yaml` | Optional. Settings for **this PC only**, see below |
+| `config/item_master.csv` | Optional item list, see [`item_master`](#item_master) |
 
 Edit them with Notepad (or any text editor), save, and **restart the server**.
 
@@ -15,13 +17,34 @@ Edit them with Notepad (or any text editor), save, and **restart the server**.
 To keep the configuration somewhere else, set the environment variable
 `VBOCR_CONFIG_DIR=D:\vbocr-config`, or pass `--config D:\vbocr-config` on the command line.
 
+## `settings.local.yaml`: settings for this PC
+
+Put your own changes in `config\settings.local.yaml` instead of editing `settings.yaml`. Only
+write the values you change; everything else comes from `settings.yaml`:
+
+```yaml
+server:
+  host: 0.0.0.0
+  api_key: "a-long-secret-only-your-office-knows"
+ocr:
+  enable_mkldnn: false
+```
+
+This file is not part of git and `update.bat` never touches it, so an update keeps your settings.
+`install.bat` writes `enable_mkldnn: false` here on PCs that need it.
+
 ## `server`
 
 ```yaml
 server:
   host: 127.0.0.1   # 0.0.0.0 = accept connections from other PCs
   port: 5000
+  api_key: ""       # set in settings.local.yaml when other PCs can connect
 ```
+
+With `api_key` set, scans, the history and `/csv` need the key: the browser page asks for it once,
+the VB.NET client sends `VbOcrClient.ApiKey`, curl sends `-H "X-API-Key: ..."`. The server prints a
+warning when it is open to other PCs without a key.
 
 ## `ocr`
 
@@ -137,3 +160,66 @@ colour_codes:
   MST: Mustard
   ...
 ```
+
+## `pdf`
+
+```yaml
+pdf:
+  use_text_layer: true
+  min_characters: 40
+  render_dpi: 200
+```
+
+PDFs made by a computer (e-mailed invoices, exported from billing software) contain real text.
+VB OCR reads that text directly: exact and much faster than OCR. A page with fewer than
+`min_characters` characters is treated as a scanned page and read with OCR at `render_dpi`.
+Set `use_text_layer: false` to always use OCR.
+
+## `checks`
+
+```yaml
+checks:
+  min_confidence: 0.90
+  total_labels: ["grand total", "net amount", ...]
+  total_tolerance: 1.00
+```
+
+- Values the OCR read with confidence below `min_confidence` (0 to 1), and numbers where a letter
+  was read as a digit (`l299.00`), are marked **unsure** (amber in the browser and the scan dialog).
+- The sum of the item amounts is compared with the amount next to the first of `total_labels`
+  found on the invoice. A difference above `total_tolerance` rupees gives a warning. Totals that
+  match after adding 3, 5, 12, 18 or 28 % GST also count as a match.
+
+## `history`
+
+```yaml
+history:
+  enabled: true
+  folder: history
+  keep_days: 365
+  warn_duplicates: true
+```
+
+Every scan is saved as a JSON file (values, warnings and CSV) in `history\YYYY-MM\`. Used for
+**Recent scans**, for saving corrections, and for the "Already scanned on …" warning when the same
+supplier and invoice number comes in again. Scans older than `keep_days` are deleted (0 = keep).
+The images themselves are not stored.
+
+## `item_master`
+
+```yaml
+item_master:
+  file: config/item_master.csv
+  overwrite: false
+```
+
+An optional list of your items, for example exported from your billing software. When a scanned
+SKU is in the list, empty columns (Article ID, Brand Name, Design Name, Size, Cup Size, Colour,
+Cost Price, M.R.P) are filled from it. With `overwrite: true` the list also replaces values read
+from the invoice.
+
+Copy `config\item_master.example.csv` to `config\item_master.csv` and fill it in. Only the
+`SKU No./Item ID.` column is required; other common titles (`SKU`, `Item Code`, `MRP`, `Color`, …)
+work too. Comma, semicolon or tab separated. SKUs match ignoring case, spaces and punctuation.
+An optional `Supplier` column limits a row to invoices from that supplier. The file is re-read
+automatically when it changes.

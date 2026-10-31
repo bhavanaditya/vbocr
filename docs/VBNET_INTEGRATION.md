@@ -52,6 +52,7 @@ Put this behind a button or menu item, for example *Purchase → Scan supplier i
 Private Sub btnScanInvoice_Click(sender As Object, e As EventArgs) Handles btnScanInvoice.Click
     Using dlg As New VbOcrScanForm()
         dlg.InstallFolder = "C:\vbocr"      ' where VB OCR is installed (default)
+        ' dlg.ServerUrl = "http://192.168.1.20:5000" : dlg.ApiKey = "..."   ' shared server only
         If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
 
         Dim invoice As VbOcrInvoice = dlg.Invoice
@@ -79,8 +80,11 @@ End Sub
 
 The dialog uses the same indigo colour scheme as the browser page. On the left are the page list
 and a preview of the selected page. On the right are a coloured status bar (blue = info,
-green = all good, amber = please check, red = error), tiles for item count, total quantity and
-total amount, the invoice details and the item table. The user adds the invoice pages in any of
+green = all good, amber = please check, red = error), tiles for item count, total quantity,
+total amount and **printed total**, the invoice details and the item table.
+Values the OCR was not sure about have an **amber** background until the user corrects them.
+The printed-total tile shows ✓ (green) when the items add up to the total on the invoice
+(also with 3/5/12/18/28 % GST added) and ✗ (red) when they do not; it updates as the user edits. The user adds the invoice pages in any of
 these ways, then clicks **Scan**:
 
 | Way | How |
@@ -101,7 +105,8 @@ The dialog also:
 - scans on a background thread, so your application does not freeze
 - shows the header values and items in editable grids, so the user can correct a misread value
 - shows the total quantity and amount (in Indian number format, e.g. ₹ 1,23,456.00), updated
-  as the user corrects values or deletes rows, to compare with the total printed on the invoice
+  as the user corrects values or deletes rows, and compares the amount with the printed total
+- highlights values the OCR was not sure about
 - shows a preview of the selected page, so values can be checked against the picture
 - returns the corrected values in `dlg.Invoice`
 
@@ -157,6 +162,10 @@ Private Async Sub btnScan_Click(sender As Object, e As EventArgs) Handles btnSca
         DataGridView1.DataSource = result.Invoice.Items
         lblInvoiceNo.Text = result.Invoice.GetHeader("Invoice Number")
         If result.Warnings <> "" Then MessageBox.Show("Please check: " & result.Warnings)
+        If result.IsUnsure(0, "Invoice Number") Then lblInvoiceNo.BackColor = Color.LightYellow
+        If result.TotalMismatch() Then
+            MessageBox.Show("Items add up to " & result.ItemsTotal & " but the invoice shows " & result.PrintedTotal)
+        End If
     Catch ex As VbOcrException
         MessageBox.Show(ex.Message, "Scan invoice", MessageBoxButtons.OK, MessageBoxIcon.Error)
     Finally
@@ -166,6 +175,7 @@ End Sub
 
 Private Function ScanInvoice(path As String) As VbOcrResult
     Dim client As New VbOcrClient()               ' http://127.0.0.1:5000
+    ' client.ApiKey = "..."                       ' only when the server has server.api_key
     If Not client.EnsureServerRunning("C:\vbocr") Then
         Throw New VbOcrException("VB OCR server did not start. Run C:\vbocr\start-server.bat to see why.")
     End If
@@ -206,6 +216,7 @@ almost no CPU while idle.
 |---|---|
 | `New()` / `New(serverUrl)` | Default `http://127.0.0.1:5000`. Use e.g. `http://192.168.1.20:5000` for a server on another PC |
 | `TimeoutSeconds` | Maximum time for one scan, default 300 |
+| `ApiKey` | Access key, when the server has `server.api_key` set. Default `""` |
 | `IsReady() As Boolean` | `True` when the server is running and ready |
 | `EnsureServerRunning(installFolder [, timeoutSeconds])` | Starts the server hidden if needed and waits until it is ready (default 120 s). Local server only |
 | `Scan(ParamArray files()) As VbOcrResult` | Scans one invoice. Several files = several pages |
@@ -229,6 +240,16 @@ All problems (server not running, not installed, file not found, scan failed) th
 | `Warnings` | `""`, or problems such as `Item 3: missing quantity` |
 | `SourceFile` | `ScanEach` only: the file this result is for |
 | `ErrorMessage` | `ScanEach` only: why the file failed, `""` when it worked. `Invoice` is `Nothing` then |
+| `UnsureCells` | `List(Of VbOcrCell)`: values the OCR was not sure about. `Row` 0 = header value, 1 = first item; `Title` = CSV title |
+| `IsUnsure(row, title) As Boolean` | `True` when that value should be checked, e.g. `IsUnsure(3, "Quantity")`, `IsUnsure(0, "Invoice Date")` |
+| `TotalCheck` | `"ok"`, `"mismatch"`, `"not_found"` (no total on the invoice), `"no_items"` or `""` |
+| `ItemsTotal`, `PrintedTotal` | Sum of the item amounts and the total printed on the invoice, as text (`"4741.10"`) |
+| `TotalMismatch() As Boolean` | `True` when the two totals differ: a row is probably missing or misread |
+| `ScanId` | ID of the scan in the server's history |
+| `Source` | `"ocr"`, or `"pdf-text"` when read exactly from a digital PDF |
+
+Item rows in `UnsureCells` refer to the rows as returned. When you delete or reorder rows, map
+them first, as `VbOcrScanForm` does.
 
 ### `VbOcrInvoice`
 
@@ -269,13 +290,15 @@ IO.File.WriteAllText("C:\Output\bill.csv", invoice.ToCsv(), New Text.UTF8Encodin
 - [ ] `C:\vbocr\start-server.bat` starts and <http://127.0.0.1:5000> opens in the browser
 - [ ] Both `.vb` files added to the project, and **Rebuild Solution** succeeds
 - [ ] A test scan of an invoice from each regular supplier gives the right values
-- [ ] Users check the total against the printed invoice total before saving
+- [ ] Users check amber values and a red ✗ printed total before saving
+- [ ] Shared server on the network: `api_key` set, and the same key in `ApiKey`
 
 ## Troubleshooting
 
 | Message | Cause / fix |
 |---|---|
 | `VB OCR is not installed in C:\vbocr` | Wrong `InstallFolder`, or `install.bat` was not run |
+| `Access key missing or wrong ...` | The server has `server.api_key`. Set `ApiKey` on the client or dialog |
 | `Cannot reach the VB OCR server ...` | Server not running. Use `EnsureServerRunning`, or run `start-server.bat` |
 | `The VB OCR server did not start` | Run `C:\vbocr\start-server.bat` by hand and read the error in the window |
 | `Unsupported file type` | Only jpg, jpeg, jpe, jfif, png, bmp, tif, tiff, webp, gif and pdf are accepted |

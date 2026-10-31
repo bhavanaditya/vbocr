@@ -51,14 +51,17 @@ def _build_table(page: Page, serial_word: Word) -> Optional[Table]:
     cells = _assign_cells(page, columns, serial_col, anchors, header_bottom, row_height)
     _split_merged_cells(cells, columns)
 
-    rows = []
+    rows, scores = [], []
     for row_cells in cells:
-        row = {}
+        row, row_scores = {}, {}
         for col in columns:
             words = sorted(row_cells.get(col.title, []), key=lambda w: (round(w.cy / row_height), w.x1))
             row[col.title] = " ".join(w.text for w in words).strip()
+            if words:
+                row_scores[col.title] = min(w.score for w in words)
         rows.append(row)
-    return Table(columns=columns, rows=rows)
+        scores.append(row_scores)
+    return Table(columns=columns, rows=rows, scores=scores)
 
 
 def _header_columns(page: Page, serial_word: Word) -> List[Column]:
