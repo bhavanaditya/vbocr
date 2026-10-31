@@ -16,6 +16,10 @@ ocr:
   use_doc_orientation_classify: true   # fixes photos taken sideways / upside down
   use_doc_unwarping: false             # set true for curled or folded paper (slower)
   use_textline_orientation: true
+  # oneDNN = Intel CPU acceleration. Some Windows PCs fail with
+  # "ConvertPirAttribute2RuntimeAttribute not support"; then VB OCR switches it off by
+  # itself (install.bat saves that here). Uncomment to force it off:
+  # enable_mkldnn: false
 
 output:
   date_format: "%d-%m-%Y"     # 03-01-2026. Use "%d/%m/%Y" for 03/01/2026
@@ -58,21 +62,51 @@ description_patterns:
   - '^(?P<brand>[^/]+)/(?P<design_name>.+)/(?P<article_id>[^/]+)$'
 
 # Colour codes found at the end of SKU codes (used when a supplier sets
-# colour_from_sku_suffix in suppliers.yaml).
+# colour_from_sku_suffix in suppliers.yaml). A code not in this list is written to the
+# CSV as it is (e.g. "XYZ"), so nothing is lost - add it here to get the full name.
+# Codes marked * appear on the Opus Fashions / Maybell invoices.
 colour_codes:
-  BLK: Black
-  BLU: Blue
-  BRN: Brown
-  GRN: Green
-  GRY: Grey
-  MRN: Maroon
-  MST: Mustard
+  AQU: Aqua
+  BGE: Beige
+  BLK: Black        # *
+  BLU: Blue         # *
+  BRG: Burgundy
+  BRN: Brown        # *
+  CHR: Charcoal
+  COR: Coral
+  CRM: Cream
+  FUS: Fuchsia
+  GLD: Gold
+  GRN: Green        # *
+  GRY: Grey         # *
+  IVR: Ivory
+  KHK: Khaki
+  LAV: Lavender
+  LEM: Lemon
+  LIL: Lilac
+  MAG: Magenta
+  MNT: Mint
+  MRN: Maroon       # *
+  MST: Mustard      # *
+  MUL: Multicolour
+  MUV: Mauve
+  NUD: Nude
   NVY: Navy
+  OLV: Olive
+  ONI: Onion Pink
   ORG: Orange
-  PNK: Pink
-  PUR: Purple
-  RED: Red
-  RST: Rust
-  TUR: Turquoise
+  PCH: Peach
+  PNK: Pink         # *
+  PRT: Print
+  PUR: Purple       # *
+  RED: Red          # *
+  ROS: Rose
+  RST: Rust         # *
+  SKN: Skin
+  SKY: Sky Blue
+  SLV: Silver
+  TEA: Teal
+  TUR: Turquoise    # *
   WHT: White
+  WIN: Wine
   YLW: Yellow

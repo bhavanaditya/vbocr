@@ -5,6 +5,8 @@ Read supplier invoice photos and scans and turn them into a **purchase-entry CSV
 - **Free and open source.** No subscriptions, API keys or per-scan charges.
 - **Runs offline** on your own Windows PC. Internet is needed only once, during installation.
 - Handles **phone photos**, including sideways and slightly tilted pictures.
+- Reads **JPG, PNG, BMP, TIFF, WEBP, GIF and PDF**. Several pages per invoice, or many invoices at once.
+- **Many ways to upload:** choose files or a folder, drag and drop, paste a screenshot (Ctrl+V), or take a phone photo.
 - Works with **any supplier layout** that has an item table with a serial-number column.
 - Outputs the **exact CSV layout** of the purchase-entry Excel sheet.
 
@@ -89,7 +91,13 @@ values before saving.
 scan.bat C:\Invoices\bill.jpg
 ```
 
-This writes `C:\Invoices\bill.csv`. More options are in [docs/USAGE.md](docs/USAGE.md).
+This writes `C:\Invoices\bill.csv`. To scan a whole folder of invoices (one CSV each):
+
+```bat
+scan-folder.bat C:\Invoices
+```
+
+More options, including all the ways to upload, are in [docs/USAGE.md](docs/USAGE.md).
 
 ## Documentation
 
@@ -117,6 +125,10 @@ This writes `C:\Invoices\bill.csv`. More options are in [docs/USAGE.md](docs/USA
 | Graphics card | Not needed | Not needed |
 | Internet | Only during installation | — |
 
+## Licence
+
+VB OCR is released under the [MIT License](LICENSE). It is free to use, change and share, including commercially.
+
 ## Licences of the components used
 
 | Component | Licence | Cost |
@@ -125,4 +137,5 @@ This writes `C:\Invoices\bill.csv`. More options are in [docs/USAGE.md](docs/USA
 | FastAPI | MIT | Free |
 | Uvicorn | BSD-3-Clause | Free |
 | PyYAML | MIT | Free |
+| Pillow | MIT-CMU (HPND) | Free |
 | Python | PSF | Free |

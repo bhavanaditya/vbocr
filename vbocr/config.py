@@ -13,6 +13,7 @@ DEFAULT_CONFIG_DIR = Path(os.environ.get("VBOCR_CONFIG_DIR", ROOT_DIR / "config"
 class Settings:
     def __init__(self, config_dir: Optional[Path] = None):
         config_dir = Path(config_dir or DEFAULT_CONFIG_DIR)
+        self.config_dir = config_dir
         self.data: Dict[str, Any] = _load_yaml(config_dir / "settings.yaml")
         self.suppliers: List[Dict[str, Any]] = (
             _load_yaml(config_dir / "suppliers.yaml").get("suppliers") or []

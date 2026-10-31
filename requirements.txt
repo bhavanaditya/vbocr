@@ -2,6 +2,9 @@
 paddlepaddle==3.3.1
 paddleocr==3.7.0
 
+# Image loading: PNG transparency, phone photo rotation, multi-page TIFF (MIT-CMU / HPND)
+Pillow>=9.0
+
 # HTTP server (MIT / BSD)
 fastapi>=0.115,<1.0
 uvicorn>=0.30

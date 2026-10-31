@@ -4,7 +4,7 @@
 
 ```
 vbocr/
-├── install.bat, start-server.bat, scan.bat    Windows scripts
+├── install.bat, start-server.bat, scan.bat, scan-folder.bat    Windows scripts
 ├── install.sh, start-server.sh                macOS / Linux scripts
 ├── requirements.txt                           runtime packages (pinned OCR versions)
 ├── requirements-dev.txt                       + test tools
@@ -14,8 +14,9 @@ vbocr/
 ├── vbocr/                                     Python package
 │   ├── cli.py            command line (scan / serve / setup)
 │   ├── server.py         HTTP server (FastAPI)
+│   ├── upload.html       browser upload page (files, folder, drag and drop, paste)
 │   ├── scanner.py        files in → Invoice / CSV out
-│   ├── engine.py         PaddleOCR wrapper → Page / Word objects
+│   ├── engine.py         image loading (Pillow) + PaddleOCR wrapper → Page / Word objects
 │   ├── table.py          rebuilds the item table from text boxes
 │   ├── extractor.py      header values, column mapping, supplier rules
 │   ├── csv_output.py     purchase-entry CSV layout

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VB OCR</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 16px;color:#222}
+h2{margin-bottom:4px}.muted{color:#666;font-size:14px}
+#drop{border:2px dashed #999;border-radius:8px;padding:28px;text-align:center;margin:16px 0;background:#fafafa}
+#drop.over{border-color:#2563eb;background:#eef4ff}
+.buttons button,.buttons label.btn{display:inline-block;margin:4px;padding:8px 14px;border:1px solid #888;border-radius:4px;background:#fff;cursor:pointer;font:inherit}
+input[type=file]{display:none}
+#list{list-style:none;padding:0}#list li{display:flex;align-items:center;gap:8px;padding:6px;border-bottom:1px solid #eee}
+#list li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#list li button{padding:2px 8px}
+fieldset{border:1px solid #ddd;border-radius:6px;margin:10px 0}
+#scan{padding:10px 24px;font-size:16px;background:#2563eb;color:#fff;border:0;border-radius:4px;cursor:pointer}
+#scan:disabled{background:#999}
+table{border-collapse:collapse;font-size:13px;margin:8px 0}td,th{border:1px solid #ccc;padding:3px 6px}
+.error{color:#b00020}.warn{color:#9a5b00}
+</style></head>
+<body>
+<h2>VB OCR - scan invoices</h2>
+<p class="muted">Supported: JPG, JPEG, PNG, BMP, TIFF, WEBP, GIF, PDF (max 25 MB each).</p>
+
+<div id="drop">
+  <b>Drag and drop invoice files or a folder here</b><br>
+  <span class="muted">or paste a screenshot / copied image with Ctrl+V</span>
+  <div class="buttons" style="margin-top:12px">
+    <label class="btn">Choose files...<input id="pickFiles" type="file" multiple accept="image/*,.pdf"></label>
+    <label class="btn">Choose folder...<input id="pickFolder" type="file" webkitdirectory multiple></label>
+    <label class="btn">Take photo<input id="pickCamera" type="file" accept="image/*" capture="environment"></label>
+    <button type="button" id="clear">Clear list</button>
+  </div>
+</div>
+
+<ul id="list"></ul>
+
+<fieldset><legend>The files are</legend>
+  <label><input type="radio" name="mode" value="pages" checked> pages of <b>one</b> invoice (in the order above)</label><br>
+  <label><input type="radio" name="mode" value="each"> <b>separate</b> invoices (one CSV each, downloaded as a ZIP)</label>
+</fieldset>
+<fieldset><legend>Result</legend>
+  <label><input type="radio" name="format" value="csv" checked> Download CSV</label>
+  <label><input type="radio" name="format" value="json"> Show on this page</label>
+</fieldset>
+<p><button id="scan" disabled>Scan</button> <span id="status"></span></p>
+<div id="result"></div>
+
+<script>
+const EXT = /\.(jpe?g|jpe|jfif|png|bmp|tiff?|webp|gif|pdf)$/i;
+let files = [];
+const $ = id => document.getElementById(id);
+
+function add(list) {
+  let skipped = 0;
+  for (const f of list) {
+    if (EXT.test(f.name)) files.push(f); else skipped++;
+  }
+  render();
+  $('status').textContent = skipped ? skipped + ' file(s) skipped: not an image or PDF.' : '';
+}
+function render() {
+  const ul = $('list'); ul.innerHTML = '';
+  files.forEach((f, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<b>' + (i + 1) + '.</b><span></span><small></small>' +
+      '<button title="Move up">&#8593;</button><button title="Move down">&#8595;</button><button title="Remove">&#10005;</button>';
+    li.querySelector('span').textContent = f.webkitRelativePath || f.name;
+    li.querySelector('small').textContent = (f.size / 1024 / 1024).toFixed(1) + ' MB';
+    const [up, down, del] = li.querySelectorAll('button');
+    up.onclick = () => { if (i > 0) { [files[i - 1], files[i]] = [files[i], files[i - 1]]; render(); } };
+    down.onclick = () => { if (i < files.length - 1) { [files[i + 1], files[i]] = [files[i], files[i + 1]]; render(); } };
+    del.onclick = () => { files.splice(i, 1); render(); };
+    ul.appendChild(li);
+  });
+  $('scan').disabled = files.length === 0;
+}
+
+for (const id of ['pickFiles', 'pickFolder', 'pickCamera']) {
+  $(id).onchange = e => { add(e.target.files); e.target.value = ''; };
+}
+$('clear').onclick = () => { files = []; render(); $('result').innerHTML = ''; };
+
+// Drag and drop, including whole folders
+const drop = $('drop');
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = async e => {
+  e.preventDefault(); drop.classList.remove('over');
+  const entries = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) { add(e.dataTransfer.files); return; }
+  const found = [];
+  async function walk(entry) {
+    if (entry.isFile) { found.push(await new Promise(r => entry.file(r))); return; }
+    const reader = entry.createReader();
+    let batch;
+    do {
+      batch = await new Promise(r => reader.readEntries(r));
+      for (const child of batch) await walk(child);
+    } while (batch.length);
+  }
+  for (const entry of entries) await walk(entry);
+  found.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+  add(found);
+};
+
+// Paste an image from the clipboard (screenshot, image copied from WhatsApp Web, ...)
+document.onpaste = e => {
+  const pasted = [];
+  for (const item of e.clipboardData.items) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      pasted.push(new File([f], 'pasted-' + (files.length + pasted.length + 1) + '.' + ext, {type: f.type}));
+    }
+  }
+  if (pasted.length) add(pasted);
+};
+
+$('scan').onclick = async () => {
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  const format = document.querySelector('input[name=format]:checked').value;
+  const body = new FormData();
+  files.forEach(f => body.append('files', f, f.name));
+  $('scan').disabled = true; $('result').innerHTML = '';
+  $('status').textContent = 'Reading ' + files.length + ' file(s), please wait...';
+  try {
+    const response = await fetch('/scan?format=' + format + '&mode=' + mode, {method: 'POST', body});
+    if (!response.ok) throw new Error((await response.text()) || response.statusText);
+    if (format === 'csv') {
+      const blob = await response.blob();
+      const name = mode === 'each' ? 'invoices.zip' : (files[0].name.replace(/\.[^.]+$/, '') || 'invoice') + '.csv';
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+      $('status').textContent = 'Downloaded ' + name + '.';
+    } else {
+      const data = await response.json();
+      const list = data.invoices || [Object.assign({file: files.map(f => f.name).join(' + ')}, data)];
+      list.forEach(showInvoice);
+      $('status').textContent = 'Done.';
+    }
+  } catch (err) {
+    $('status').innerHTML = '<span class="error"></span>';
+    $('status').firstChild.textContent = 'Error: ' + err.message;
+  } finally { $('scan').disabled = files.length === 0; }
+};
+
+function cell(tag, text) { const c = document.createElement(tag); c.textContent = text == null ? '' : text; return c; }
+function showInvoice(inv) {
+  const box = document.createElement('div');
+  box.appendChild(cell('h3', inv.file));
+  if (inv.error) { box.appendChild(cell('p', inv.error)).className = 'error'; $('result').appendChild(box); return; }
+  (inv.warnings || []).forEach(w => box.appendChild(cell('p', 'Check: ' + w)).className = 'warn');
+  const head = document.createElement('table');
+  Object.entries(inv.header || {}).forEach(([k, v]) => { const tr = head.insertRow(); tr.appendChild(cell('th', k)); tr.appendChild(cell('td', v)); });
+  box.appendChild(head);
+  const items = inv.items || [];
+  if (items.length) {
+    const t = document.createElement('table'); const hr = t.insertRow();
+    Object.keys(items[0]).forEach(k => hr.appendChild(cell('th', k)));
+    items.forEach(it => { const tr = t.insertRow(); Object.values(it).forEach(v => tr.appendChild(cell('td', v))); });
+    box.appendChild(t);
+  }
+  $('result').appendChild(box);
+}
+</script>
+</body></html>

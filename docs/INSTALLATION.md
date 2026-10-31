@@ -168,6 +168,9 @@ install.bat
 If you used the ZIP download, extract the new ZIP over the old folder. **Keep your
 `config\settings.yaml` and `config\suppliers.yaml`**, or back them up first. Then run `install.bat` again.
 
+`install.bat` ends with a test read. On PCs where PaddlePaddle's oneDNN acceleration fails, it
+prints `saved enable_mkldnn: false` and writes that setting into `config\settings.yaml`.
+
 ## Uninstalling
 
 1. Stop the server (close its window, or end `pythonw.exe` in Task Manager).

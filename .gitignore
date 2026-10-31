@@ -24,3 +24,6 @@ obj/
 
 # Downloaded OCR models
 models/
+
+# Error details written by the command line
+logs/

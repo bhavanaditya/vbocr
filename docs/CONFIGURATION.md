@@ -55,6 +55,7 @@ After changing models, run `.venv\Scripts\python.exe -m vbocr setup` once (with 
 | `use_doc_unwarping` | `false` | Flattens curled or folded paper. Slower, and can blur clean scans |
 | `use_textline_orientation` | `true` | Reads individual text lines that are upside down |
 | `text_det_limit_side_len` | (PaddleOCR default) | Larger values help with very large images and small text, but are slower |
+| `enable_mkldnn` | (not set) | oneDNN = Intel CPU acceleration. Some Windows PCs fail with *ConvertPirAttribute2RuntimeAttribute not support*. VB OCR then switches it off by itself, and `install.bat` saves `enable_mkldnn: false` here so later starts skip the failed attempt. Set it to `false` yourself to force it off |
 
 ## `output`
 
@@ -126,7 +127,9 @@ The first matching pattern is used. If none match, the whole description goes to
 ## `colour_codes`
 
 Colour abbreviations used at the end of SKU codes. Only used for suppliers whose profile has
-`colour_from_sku_suffix`. A code that is not in the list is written as it is.
+`colour_from_sku_suffix`. A code that is not in the list is written as it is. The default list
+has 44 common garment colour codes; the ones seen on the Opus Fashions / Maybell invoices are
+marked with `*`. Add your suppliers' own codes here.
 
 ```yaml
 colour_codes:

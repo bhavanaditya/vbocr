@@ -24,11 +24,12 @@ button to an existing application, see [INTEGRATE_EXISTING_APP.md](INTEGRATE_EXI
 - Both files and all code samples from these guides compile with **0 errors and 0 warnings** for
   .NET Framework 4.5 / VB 15 (Visual Studio 2017) with `Option Strict On`, `Option Infer Off`,
   warnings treated as errors and an x86 target. They also compile for .NET Framework 2.0 / VB 9 (VS 2008).
-- `VbOcrClient` and `VbOcrInvoice` were run against a live VB OCR server: scanning, multi-page
-  scans, error messages, CSV parsing and write-back, and number/date conversion on a PC set to a
+- `VbOcrClient` and `VbOcrInvoice` were run against a live VB OCR server: scanning JPG and PNG
+  (including transparent PNG), multi-page scans mixing JPG and PNG, `ScanEach` on a folder with a
+  damaged image and a non-image file, error messages, CSV parsing and write-back, and number/date conversion on a PC set to a
   German number format (`,` as the decimal point).
 - The dialog (`VbOcrScanForm`) compiles but has not been opened on Windows yet. Try it once
-  during the test step.
+  during the test step: adding files, a folder, pasting, drag and drop, and the page order.
 
 All class names start with `VbOcr`, so they will not clash with classes already in your project.
 The files have no `Namespace`, so they end up in your project's root namespace.
@@ -76,7 +77,22 @@ Private Sub btnScanInvoice_Click(sender As Object, e As EventArgs) Handles btnSc
 End Sub
 ```
 
-The dialog:
+The dialog has a **page list** on the left. The user adds the invoice pages in any of these ways,
+then clicks **Scan**:
+
+| Way | How |
+|---|---|
+| **Add files...** | Select one or more files (jpg, png, bmp, tif, webp, gif, pdf) |
+| **Add folder...** | Every image / PDF in the folder, sorted by name |
+| **Paste (Ctrl+V)** | An image copied to the clipboard (Print Screen / Snipping Tool screenshot, image copied from WhatsApp Desktop or a browser), or files copied in Explorer |
+| Drag and drop | Drop files or folders from Explorer onto the page list |
+
+All listed files are pages of **one** invoice, scanned in list order. **Up** / **Down** change the
+order, **Remove** (or the Delete key) and **Clear** take pages out. Files that are not images or
+PDFs are skipped with a message. Pasted images are saved as temporary PNG files and deleted when
+the dialog closes.
+
+The dialog also:
 
 - starts the VB OCR server in the background if it is not running (no window appears)
 - scans on a background thread, so your application does not freeze
@@ -88,7 +104,37 @@ To scan files your application already has (for example from a scanner folder), 
 before opening the dialog and it starts at once:
 
 ```vb
-dlg.FilesToScan = New String() {"C:\Scans\bill_p1.jpg", "C:\Scans\bill_p2.jpg"}
+dlg.FilesToScan = New String() {"C:\Scans\bill_p1.jpg", "C:\Scans\bill_p2.png"}
+```
+
+Or pre-fill the page list without scanning yet (files and folders both work):
+
+```vb
+dlg.AddFiles(New String() {"C:\Scans"})
+```
+
+After OK, `dlg.Files` returns the scanned files in page order, for example to archive them.
+
+### Many separate invoices at once
+
+The dialog is for one invoice. To process a pile of invoices (one per file), use
+`VbOcrClient.ScanEach` on a background thread:
+
+```vb
+Dim client As New VbOcrClient()
+client.EnsureServerRunning("C:\vbocr")
+Dim files() As String = VbOcrClient.GetInvoiceFiles("C:\Scans\Today")
+For Each result As VbOcrResult In client.ScanEach(files)
+    If result.ErrorMessage.Length > 0 Then
+        ' this file could not be read; the others are still processed
+        Console.WriteLine(Path.GetFileName(result.SourceFile) & ": " & result.ErrorMessage)
+        Continue For
+    End If
+    File.WriteAllText(Path.ChangeExtension(result.SourceFile, ".csv"), result.Csv, New System.Text.UTF8Encoding(True))
+    For Each row As DataRow In result.Invoice.Items.Rows
+        Dim qty As Decimal = VbOcrInvoice.ToDecimal(row("Quantity"))
+    Next
+Next
 ```
 
 ## 3. Without the dialog: `VbOcrClient`
@@ -158,6 +204,10 @@ almost no CPU while idle.
 | `IsReady() As Boolean` | `True` when the server is running and ready |
 | `EnsureServerRunning(installFolder [, timeoutSeconds])` | Starts the server hidden if needed and waits until it is ready (default 120 s). Local server only |
 | `Scan(ParamArray files()) As VbOcrResult` | Scans one invoice. Several files = several pages |
+| `ScanEach(ParamArray files()) As VbOcrResult()` | Scans every file as a **separate** invoice. One result per file; a file that fails sets `ErrorMessage` instead of throwing |
+| `Shared GetInvoiceFiles(folder) As String()` | All supported files in a folder, sorted by name |
+| `Shared IsSupportedFile(path) As Boolean` | `True` for jpg, jpeg, jpe, jfif, png, bmp, tif, tiff, webp, gif, pdf |
+| `Shared SupportedExtensions` / `FileDialogFilter` | The supported extensions, and a ready-made `OpenFileDialog.Filter` |
 | `ScanToFile(outputCsv, ParamArray files())` | Same, and saves the CSV (UTF-8 with BOM, opens correctly in Excel) |
 | `Shared ScanWithoutServer(installFolder, ParamArray files())` | Scans by running the command line instead of the server. Slower: the engine loads every time |
 
@@ -172,6 +222,8 @@ All problems (server not running, not installed, file not found, scan failed) th
 | `Csv` | The raw CSV text |
 | `ItemCount` | Number of items found |
 | `Warnings` | `""`, or problems such as `Item 3: missing quantity` |
+| `SourceFile` | `ScanEach` only: the file this result is for |
+| `ErrorMessage` | `ScanEach` only: why the file failed, `""` when it worked. `Invoice` is `Nothing` then |
 
 ### `VbOcrInvoice`
 
@@ -221,7 +273,8 @@ IO.File.WriteAllText("C:\Output\bill.csv", invoice.ToCsv(), New Text.UTF8Encodin
 | `VB OCR is not installed in C:\vbocr` | Wrong `InstallFolder`, or `install.bat` was not run |
 | `Cannot reach the VB OCR server ...` | Server not running. Use `EnsureServerRunning`, or run `start-server.bat` |
 | `The VB OCR server did not start` | Run `C:\vbocr\start-server.bat` by hand and read the error in the window |
-| `VB OCR server error 400: Unsupported file type` | Only jpg, jpeg, png, bmp, tif, tiff, webp and pdf are accepted |
+| `Unsupported file type` | Only jpg, jpeg, jpe, jfif, png, bmp, tif, tiff, webp, gif and pdf are accepted |
+| `VB OCR server error 400: Cannot read image ...` | The file is damaged or is not really an image (for example a renamed file). Open it in Paint to check |
 | Timeout after 300 s | Very large image or slow PC. Increase `TimeoutSeconds`, or use smaller photos |
 | Build warning `SYSLIB0014` (only on .NET 6/8) | Harmless. `HttpWebRequest` is used so that the same file also works on .NET Framework |
 

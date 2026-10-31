@@ -31,14 +31,14 @@ echo Installing packages (this can take several minutes)...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip || goto :failed
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :failed
 
-echo Downloading OCR models...
+echo Downloading OCR models and testing them on this PC...
 ".venv\Scripts\python.exe" -m vbocr setup || goto :failed
 
 echo.
 echo ============================================================
 echo  VB OCR is installed.
 echo  Start the server:  start-server.bat
-echo  Scan from command line:  scan.bat invoice.jpg
+echo  Scan from command line:  scan.bat invoice.jpg   or   scan-folder.bat C:\Invoices
 echo ============================================================
 exit /b 0
 

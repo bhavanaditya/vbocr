@@ -59,7 +59,29 @@ the VB.NET app or Task Scheduler). Either stop the other copy, or change `server
 
 Run `start-server.bat` by hand to see the error message in the window.
 
+### Scan fails with "ConvertPirAttribute2RuntimeAttribute not support" or "onednn_instruction"
+
+This is a bug in PaddlePaddle's oneDNN CPU acceleration on some Intel/AMD Windows PCs. VB OCR now
+handles it automatically: it retries without oneDNN and prints
+`Retrying without oneDNN CPU acceleration`. To stop it trying oneDNN at every start, run
+`install.bat` again (it tests the OCR and saves the setting), or add this line under `ocr:` in
+`config\settings.yaml`:
+
+```yaml
+  enable_mkldnn: false
+```
+
+### The error scrolls off the screen
+
+The command line saves the full error in `logs\last-error.txt` in the VB OCR folder. Send that
+file when asking for help.
+
 ## Scan results
+
+### PNG / screenshot gives no text or a black image
+
+Fixed: transparent PNGs (for example from the Snipping Tool or a browser) are now put on a white
+background before reading. Update VB OCR if you still see this.
 
 ### "item table not found"
 
@@ -107,7 +129,7 @@ Large decorative logos are hard to read. Add a supplier profile with the correct
 
 When reporting a problem, include:
 
-1. The text in the server window
+1. The text in the server window, or `logs\last-error.txt`
 2. The output of `.venv\Scripts\python.exe -m vbocr --version`
 3. The output of `.venv\Scripts\python.exe -m vbocr scan <file> --json`
 4. If possible, the invoice image with confidential details covered

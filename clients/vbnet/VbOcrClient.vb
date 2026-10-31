@@ -54,6 +54,10 @@ Public Class VbOcrResult
     Public Warnings As String = ""
     ''' <summary>The CSV split into header values and an item table.</summary>
     Public Invoice As VbOcrInvoice
+    ''' <summary>ScanEach only: the file this result belongs to.</summary>
+    Public SourceFile As String = ""
+    ''' <summary>ScanEach only: why this file failed. Empty when it worked.</summary>
+    Public ErrorMessage As String = ""
 End Class
 
 ''' <summary>Talks to the VB OCR server. All methods are synchronous: call them from a
@@ -133,8 +137,32 @@ Public Class VbOcrClient
         Return False
     End Function
 
+    ''' <summary>File types the server accepts (lower case, with dot).</summary>
+    Public Shared ReadOnly SupportedExtensions() As String = New String() { _
+        ".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".bmp", ".tif", ".tiff", ".webp", ".gif", ".pdf"}
+
+    ''' <summary>Filter for OpenFileDialog.Filter.</summary>
+    Public Const FileDialogFilter As String = _
+        "Invoice images and PDF|*.jpg;*.jpeg;*.jpe;*.jfif;*.png;*.bmp;*.tif;*.tiff;*.webp;*.gif;*.pdf|All files|*.*"
+
+    ''' <summary>True when the file has a supported extension.</summary>
+    Public Shared Function IsSupportedFile(ByVal filePath As String) As Boolean
+        Dim ext As String = Path.GetExtension(filePath).ToLowerInvariant()
+        Return Array.IndexOf(SupportedExtensions, ext) >= 0
+    End Function
+
+    ''' <summary>All supported files in a folder (not sub-folders), sorted by name.</summary>
+    Public Shared Function GetInvoiceFiles(ByVal folder As String) As String()
+        Dim found As New List(Of String)
+        For Each filePath As String In Directory.GetFiles(folder)
+            If IsSupportedFile(filePath) Then found.Add(filePath)
+        Next
+        found.Sort(StringComparer.OrdinalIgnoreCase)
+        Return found.ToArray()
+    End Function
+
     ''' <summary>Scans one invoice. Pass several files when the invoice has several pages.
-    ''' Supported: jpg, jpeg, png, bmp, tif, tiff, webp, pdf.</summary>
+    ''' Supported: jpg, jpeg, png, bmp, tif, tiff, webp, gif, pdf.</summary>
     Public Function Scan(ByVal ParamArray filePaths() As String) As VbOcrResult
         If filePaths Is Nothing OrElse filePaths.Length = 0 Then
             Throw New ArgumentException("At least one file is required.")
@@ -145,6 +173,10 @@ Public Class VbOcrClient
         For i As Integer = 0 To filePaths.Length - 1
             If Not File.Exists(filePaths(i)) Then
                 Throw New VbOcrException("File not found: " & filePaths(i))
+            End If
+            If Not IsSupportedFile(filePaths(i)) Then
+                Throw New VbOcrException("Unsupported file type: " & Path.GetFileName(filePaths(i)) & _
+                    ". Use jpg, png, bmp, tif, webp, gif or pdf.")
             End If
             ' Send a plain ASCII name; only the extension matters to the server.
             Dim name As String = "page" & (i + 1).ToString(CultureInfo.InvariantCulture) & Path.GetExtension(filePaths(i)).ToLowerInvariant()
@@ -179,12 +211,40 @@ Public Class VbOcrClient
                 Throw New VbOcrException("Cannot reach the VB OCR server at " & _baseUrl & _
                     ". Start it with start-server.bat or EnsureServerRunning. (" & ex.Message & ")", ex)
             End If
-            Dim message As String = ReadBody(errorResponse)
+            Dim message As String = ServerErrorText(ReadBody(errorResponse))
+            ' The files are sent as page1.jpg, page2.png, ...: show the user's file names instead.
+            For i As Integer = filePaths.Length - 1 To 0 Step -1
+                Dim sentName As String = "page" & (i + 1).ToString(CultureInfo.InvariantCulture) & Path.GetExtension(filePaths(i)).ToLowerInvariant()
+                message = message.Replace(sentName, Path.GetFileName(filePaths(i)))
+            Next
             Throw New VbOcrException("VB OCR server error " & CInt(errorResponse.StatusCode).ToString(CultureInfo.InvariantCulture) & ": " & message, ex)
         End Try
 
         result.Invoice = VbOcrInvoice.Parse(result.Csv)
         Return result
+    End Function
+
+    ''' <summary>Scans every file as a SEPARATE invoice (for example a folder of bills).
+    ''' Returns one result per file, in the same order. A file that fails does not stop the
+    ''' others: its result has Invoice = Nothing and the reason in ErrorMessage.</summary>
+    Public Function ScanEach(ByVal ParamArray filePaths() As String) As VbOcrResult()
+        If filePaths Is Nothing OrElse filePaths.Length = 0 Then
+            Throw New ArgumentException("At least one file is required.")
+        End If
+        Dim results(filePaths.Length - 1) As VbOcrResult
+        For i As Integer = 0 To filePaths.Length - 1
+            Try
+                results(i) = Scan(filePaths(i))
+            Catch ex As VbOcrException
+                results(i) = New VbOcrResult()
+                results(i).ErrorMessage = ex.Message
+            Catch ex As IOException
+                results(i) = New VbOcrResult()
+                results(i).ErrorMessage = ex.Message
+            End Try
+            results(i).SourceFile = filePaths(i)
+        Next
+        Return results
     End Function
 
     ''' <summary>Scans and saves the CSV (UTF-8 with BOM, so Excel opens it correctly).</summary>
@@ -265,6 +325,16 @@ Public Class VbOcrClient
         Using reader As New StreamReader(response.GetResponseStream(), Encoding.UTF8, True)
             Return reader.ReadToEnd()
         End Using
+    End Function
+
+    ' {"detail":"Cannot read image ..."} -> Cannot read image ...
+    Private Shared Function ServerErrorText(ByVal body As String) As String
+        Const prefix As String = "{""detail"":"""
+        Dim text As String = body.Trim()
+        If text.StartsWith(prefix, StringComparison.Ordinal) AndAlso text.EndsWith("""}", StringComparison.Ordinal) Then
+            text = text.Substring(prefix.Length, text.Length - prefix.Length - 2).Replace("""", """").Replace("\", "")
+        End If
+        Return text
     End Function
 
     Private Shared Sub WriteAscii(ByVal stream As Stream, ByVal text As String)
