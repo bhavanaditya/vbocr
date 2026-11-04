@@ -9,6 +9,7 @@ from test_extractor import SAMPLE_SUPPLIER, garment_invoice, settings_with, w
 
 from vbocr.extractor import extract_invoice
 from vbocr.history import History
+from vbocr.models import Invoice
 from vbocr.pdf import read_pdf
 
 
@@ -161,3 +162,67 @@ def test_history_duplicates_and_corrections(tmp_path):
     assert saved["csv"] == "csv-corrected" and saved["items"][0]["quantity"] == "5" and saved["corrected"]
     assert history.get("../../etc/passwd") is None
     json.dumps(saved)
+
+
+def test_corrections_are_learned_and_counted(tmp_path):
+    from vbocr import item_master
+
+    settings = settings_with(tmp_path, SAMPLE_SUPPLIER)
+    learned_file = tmp_path / "learned.csv"
+    settings.data["item_master"] = {"learned_file": str(learned_file), "learn": True}
+    history = History(tmp_path / "history")
+    invoice = extract_invoice([garment_invoice()], settings)
+    history.record(invoice, "csv", ["bill.jpg"])
+
+    corrected = Invoice.from_dict(invoice.to_dict())
+    corrected.items[0]["size"] = "XL"          # not printed: typed by the user
+    corrected.items[1]["quantity"] = "4"      # OCR misread
+    del corrected.items[2]                    # wrong row
+    corrected.items.append(dict(corrected.items[0], sku="NEW001", size="M"))
+    original = history.update(invoice.scan_id, corrected, "csv2")
+    assert original["items"][1]["quantity"] == "1"
+
+    saved = history.get(invoice.scan_id)
+    kinds = {(c.get("row"), c.get("field") or c.get("kind")) for c in saved["changes"]}
+    assert kinds == {(1, "size"), (2, "quantity"), (3, "row_added"), (3, "row_deleted")}
+    stats = history.correction_stats()
+    assert stats["scans"] == 1 and stats["corrected"] == 1
+    assert stats["fields"] == {"size": 1, "quantity": 1}
+    assert stats["suppliers"][0]["name"] == "Sample Garments Pvt Ltd"
+
+    assert item_master.learn(learned_file, "Sample Garments Pvt Ltd", original["items"], corrected.items) >= 2
+    again = extract_invoice([garment_invoice()], settings)
+    assert again.items[0]["size"] == "XL"      # filled from what was learned
+
+    # the invoice shows a different M.R.P than the list: marked for checking
+    item_master.learn(learned_file, "Sample Garments Pvt Ltd", again.items,
+                      [dict(again.items[0], mrp="1099.00")] + again.items[1:])
+    third = extract_invoice([garment_invoice()], settings)
+    assert third.items[0]["mrp"] == "999.00" and {"row": 1, "field": "mrp"} in third.unsure
+
+
+def test_total_check_explains_taxes_charges_and_discount(tmp_path):
+    from test_extractor import w
+
+    settings = settings_with(tmp_path, SAMPLE_SUPPLIER)
+    settings.data["checks"].update({
+        "tax_labels": ["cgst", "sgst", "igst"], "charge_labels": ["freight", "round off"],
+        "discount_labels": ["discount"]})
+    page = garment_invoice()  # items 4741.10; prints Grand Total 5743.10 -> change it
+    for word in page.words:
+        if word.text == "5743.10":
+            word.text = "5060.00"
+    # 4741.10 - 100.00 + 2.5% CGST/SGST of 4641.10 (116.03 each) + 186.80 freight + 0.04 round off
+    page.words += [
+        w("Discount", 600, 600, 700, 618), w("(-)100.00", 990, 600, 1060, 618),
+        w("CGST @ 2.5%", 600, 625, 720, 643), w("116.03", 990, 625, 1050, 643),
+        w("Add: SGST @2.5 %", 600, 650, 740, 668), w("2.5%", 800, 650, 840, 668), w("116.03", 990, 650, 1050, 668),
+        w("Freight", 600, 675, 680, 693), w("186.80", 990, 675, 1050, 693),
+        w("Round off", 600, 700, 690, 718), w("0.04", 1000, 700, 1040, 718),
+    ]
+    check = extract_invoice([page], settings).total_check
+    assert check["status"] == "ok", check
+    labels = [a["label"] for a in check["adjustments"]]
+    assert {"Discount", "CGST", "SGST", "Freight"} <= set(labels)  # round off 0.04 is within tolerance
+    assert check["adjustments"][labels.index("Discount")]["value"] == "-100.00"
+    assert check["note"].startswith("printed total = items")

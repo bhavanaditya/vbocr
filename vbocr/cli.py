@@ -14,6 +14,7 @@ import argparse
 import glob
 import json
 import logging
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -49,6 +50,28 @@ def main(argv=None) -> int:
     serve = sub.add_parser("serve", help="Start the HTTP server for the VB.NET application")
     serve.add_argument("--host")
     serve.add_argument("--port", type=int)
+
+    watch = sub.add_parser(
+        "watch",
+        help="Scan every invoice that appears in a folder (e.g. the scanner's output folder)",
+        description="Each new file is scanned as a separate invoice. The CSV goes to the output "
+        "folder, the file is moved to 'done' (or 'failed'). Stop with Ctrl+C.",
+    )
+    watch.add_argument("folder", help="Folder to watch")
+    watch.add_argument("-o", "--output", help="Folder for the CSV files (default: <folder>\\csv)")
+
+    add = sub.add_parser(
+        "add-sample",
+        help="Add your own invoice to the test bench (samples folder)",
+        description="Copies the file(s) to samples\\<name>, scans them and saves the result as "
+        "expected.csv. Then open expected.csv, correct every wrong value and save it.",
+    )
+    add.add_argument("files", nargs="+", help="Page(s) of one invoice")
+    add.add_argument("--name", help="Name of the sample (default: the file name)")
+    add.add_argument("--folder", help="Samples folder (default: samples in the VB OCR folder)")
+
+    check = sub.add_parser("check-samples", help="Scan every sample again and list values that differ")
+    check.add_argument("--folder", help="Samples folder (default: samples in the VB OCR folder)")
 
     sub.add_parser("setup", help="Download the OCR models now (needs internet once)")
 
@@ -86,6 +109,35 @@ def _run(args) -> int:
         run(settings, host=args.host, port=args.port)
         return 0
 
+    if args.command in ("add-sample", "check-samples"):
+        from . import samples
+        from .config import ROOT_DIR
+        from .scanner import Scanner
+
+        folder = Path(args.folder or os.environ.get("VBOCR_SAMPLES") or ROOT_DIR / "samples")
+        scanner = Scanner(settings, record_history=False)
+        if args.command == "check-samples":
+            return 1 if samples.check_samples(scanner, folder, lambda line: print(line, file=sys.stderr)) else 0
+        files, _, missing = expand_inputs(args.files)
+        if missing or not files:
+            print("File not found: {}".format(" ".join(missing or args.files)), file=sys.stderr)
+            return 2
+        target = samples.add_sample(scanner, files, folder, args.name)
+        print("Sample saved in {}\nNow open {} in Excel, correct every wrong value and save it "
+              "(keep the CSV format). Then check with:  python -m vbocr check-samples".format(
+                  target, target / samples.EXPECTED), file=sys.stderr)
+        return 0
+
+    if args.command == "watch":
+        from .scanner import Scanner
+        from .watcher import FolderWatcher
+
+        watcher = FolderWatcher(Scanner(settings), args.folder, args.output)
+        print("Watching {} - new invoices are scanned automatically. Stop with Ctrl+C.".format(
+            watcher.folder), file=sys.stderr)
+        watcher.run_forever()
+        return 0
+
     files, has_folder, missing = expand_inputs(args.files)
     for name in missing:
         print("File not found: {}".format(name), file=sys.stderr)
@@ -104,7 +156,7 @@ def _run(args) -> int:
     scanner = Scanner(settings)
     if not each:
         output = args.output or (_default_output(files[0], args.json) if args.next_to_input else None)
-        return _scan_one(scanner, files, output, args.json)
+        return _write_result(scanner, scanner.scan(files), output, args.json)
 
     out_dir = Path(args.output) if args.output else None
     if out_dir:
@@ -115,7 +167,12 @@ def _run(args) -> int:
         print("[{}/{}] {}".format(index, len(files), name), file=sys.stderr)
         output = str(out_dir / Path(_default_output(name, args.json)).name) if out_dir else _default_output(name, args.json)
         try:
-            worst = max(worst, _scan_one(scanner, [name], output, args.json))
+            invoices = scanner.scan_separate(name)
+            if len(invoices) > 1:
+                print("  {} invoices in this file".format(len(invoices)), file=sys.stderr)
+            for part, invoice in enumerate(invoices, start=1):
+                target = output if len(invoices) == 1 else _part_name(output, part)
+                worst = max(worst, _write_result(scanner, invoice, target, args.json))
         except Exception as error:  # noqa: BLE001 - one bad file must not stop the batch
             failed += 1
             _report_error(error, name)
@@ -123,8 +180,12 @@ def _run(args) -> int:
     return 3 if failed else worst
 
 
-def _scan_one(scanner, files: List[str], output: Optional[str], as_json: bool) -> int:
-    invoice = scanner.scan(files)
+def _part_name(output: str, part: int) -> str:
+    path = Path(output)
+    return str(path.with_name("{}_{}{}".format(path.stem, part, path.suffix)))
+
+
+def _write_result(scanner, invoice, output: Optional[str], as_json: bool) -> int:
     result = json.dumps(invoice.to_dict(), indent=2) if as_json else scanner.to_csv(invoice)
 
     if output:

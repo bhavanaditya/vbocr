@@ -244,6 +244,7 @@ All problems (server not running, not installed, file not found, scan failed) th
 | `IsUnsure(row, title) As Boolean` | `True` when that value should be checked, e.g. `IsUnsure(3, "Quantity")`, `IsUnsure(0, "Invoice Date")` |
 | `TotalCheck` | `"ok"`, `"mismatch"`, `"not_found"` (no total on the invoice), `"no_items"` or `""` |
 | `ItemsTotal`, `PrintedTotal` | Sum of the item amounts and the total printed on the invoice, as text (`"4741.10"`) |
+| `ExpectedItemsTotal` | What the items should add up to when the printed total includes GST, freight or a discount (found on the invoice). `""` otherwise |
 | `TotalMismatch() As Boolean` | `True` when the two totals differ: a row is probably missing or misread |
 | `ScanId` | ID of the scan in the server's history |
 | `Source` | `"ocr"`, or `"pdf-text"` when read exactly from a digital PDF |

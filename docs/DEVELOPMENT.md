@@ -21,6 +21,9 @@ vbocr/
 │   ├── scanner.py        files in → Invoice / CSV out
 │   ├── engine.py         image loading (Pillow) + PaddleOCR wrapper → Page / Word objects
 │   ├── pdf.py            digital PDF text layer (pypdfium2); scanned pages rendered for OCR
+│   ├── preprocess.py     phone photos: flatten the page, remove shadows
+│   ├── watcher.py        watch folder
+│   ├── samples.py        test bench with your own invoices
 │   ├── table.py          rebuilds the item table from text boxes
 │   ├── extractor.py      header values, column mapping, supplier rules, total check, unsure values
 │   ├── item_master.py    optional item list that fills empty columns
@@ -31,7 +34,12 @@ vbocr/
 │   └── text_utils.py     number / date clean-up
 ├── clients/vbnet/                             VB.NET client and scan dialog
 ├── models/                                    downloaded OCR models (git-ignored)
-├── tests/                                     tests (no OCR engine needed)
+├── tests/                                     tests (most need no OCR engine)
+│   ├── make_test_files.py                     generates test invoices (image, photo, PDFs)
+│   ├── test_ocr_end_to_end.py                 real OCR, only with VBOCR_OCR_TESTS=1
+│   └── test_samples.py                        your own invoices (samples/), see below
+├── clients/vbnet/tests/                       VB.NET build check (.NET 2.0 / 4.5) and client test
+├── .github/workflows/ci.yml                   tests on Linux and Windows for every push
 └── docs/
 ```
 
@@ -50,9 +58,43 @@ install.bat
 .venv/bin/python -m pytest tests
 ```
 
-The tests use hand-made OCR boxes, so they run in under a second and do not load PaddleOCR.
+Most tests use hand-made OCR boxes, so they run in about a second and do not load PaddleOCR.
+The end-to-end tests read generated invoices (clean image, transparent PNG, angled photo with a
+shadow, upside-down photo, digital and 2-invoice PDFs) with the real engine:
+
+```bat
+set VBOCR_OCR_TESTS=1
+.venv\Scripts\python.exe -m pytest tests
+```
+
+**On every push** GitHub Actions (`.github/workflows/ci.yml`) runs the fast tests on Linux and
+Windows, and on a clean Windows machine: `install.bat` (including the oneDNN self-test), all
+end-to-end tests, `scan.bat`, the VB.NET build for .NET 2.0 and 4.5, the VB.NET client against a
+running server with an access key, `autostart-on/off.bat` and `update.bat`. See the **Actions**
+tab on GitHub.
+
+## Testing with your own invoices
+
+The generated invoices cannot show every supplier's layout. Keep a few of your real invoices as
+a test bench, and check them after every change or update:
+
+```bat
+rem 1. add an invoice (several files = pages of one invoice)
+.venv\Scripts\python.exe -m vbocr add-sample C:\Invoices\opus_0042.jpg --name opus-photo
+
+rem 2. open samples\opus-photo\expected.csv in Excel, correct every wrong value, save as CSV
+
+rem 3. any time later
+.venv\Scripts\python.exe -m vbocr check-samples
+```
+
+`check-samples` reads every sample again and lists each value that differs from `expected.csv`,
+with the share of values right. Good samples: one photo and one scan per regular supplier, a
+digital PDF, a multi-page invoice, a bad photo (angle, shadow). With `VBOCR_OCR_TESTS=1`,
+pytest runs them too (`tests/test_samples.py`); `VBOCR_SAMPLES` points to another folder.
+
 **Do not commit real invoices.** They contain business data. `samples/` and `*.csv` are
-git-ignored so you can keep test images locally.
+git-ignored.
 
 ## How the table reader works
 

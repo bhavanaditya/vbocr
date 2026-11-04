@@ -11,6 +11,7 @@
     GET  /history           recent scans, newest first. ?limit=50&q=<supplier / invoice no>
     GET  /history/{id}      one saved scan (JSON)
     GET  /history/{id}.csv  its CSV
+    GET  /stats             what users corrected (per supplier and column). ?days=90
 
 When server.api_key is set, every request except / and /health needs the key in the
 "X-API-Key" header (or ?key=...).
@@ -31,7 +32,7 @@ from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request,
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from . import __version__
+from . import __version__, item_master
 from .config import Settings
 from .csv_output import HEADER_TITLES, ITEM_TITLES
 from .engine import SUPPORTED_EXTENSIONS
@@ -59,7 +60,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         state["scanner"] = await run_in_threadpool(Scanner, settings)
         log.info("OCR engine ready")
+        from .watcher import start_in_background
+
+        stop_watch = start_in_background(state["scanner"], settings.data.get("watch") or {})
         yield
+        if stop_watch is not None:
+            stop_watch.set()
 
     app = FastAPI(title="VB OCR", version=__version__, lifespan=lifespan)
 
@@ -82,7 +88,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok" if "scanner" in state else "loading", "version": __version__,
-                "key_required": bool(api_key)}
+                "key_required": bool(api_key), "check_updates": bool(settings.server.get("check_updates", True))}
 
     @app.post("/scan", dependencies=[Depends(require_key)])
     async def scan(
@@ -133,9 +139,28 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         invoice = Invoice.from_dict(data)
         csv_text = engine.to_csv(invoice)
         scan_id = str(data.get("scan_id") or "")
+        headers = {}
         if scan_id and engine.history is not None:
-            engine.history.update(scan_id, invoice, csv_text)
-        return Response(csv_text, media_type="text/csv; charset=utf-8")
+            original = engine.history.update(scan_id, invoice, csv_text)
+            master = settings.item_master
+            if original is not None and master.get("learn", True) and master.get("learned_file"):
+                learned = item_master.learn(
+                    settings.resolve(master["learned_file"]),
+                    invoice.header.get("supplier_name") or (original.get("header") or {}).get("supplier_name", ""),
+                    original.get("items") or [],
+                    invoice.items,
+                )
+                headers["X-VBOCR-Learned"] = str(learned)
+        return Response(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
+
+    @app.get("/stats", dependencies=[Depends(require_key)])
+    def stats(days: int = Query(90, ge=1, le=3650)) -> dict:
+        engine = scanner()
+        if engine.history is None:
+            return {"enabled": False}
+        result = engine.history.correction_stats(days)
+        result["enabled"] = True
+        return result
 
     @app.get("/history", dependencies=[Depends(require_key)])
     def history_list(limit: int = Query(50, ge=1, le=500), q: str = "") -> dict:
@@ -172,8 +197,11 @@ def result_headers(invoice: Invoice) -> dict:
         headers["X-VBOCR-Unsure"] = _latin1(";".join(parts))
     check = invoice.total_check or {}
     if check.get("status"):
-        headers["X-VBOCR-Total-Check"] = "{}|{}|{}".format(
-            check.get("status"), check.get("items_total", ""), check.get("printed_total", ""))
+        # status|items total|printed total|what the items should add up to (printed total
+        # less the GST / freight / discount lines found)
+        headers["X-VBOCR-Total-Check"] = "{}|{}|{}|{}".format(
+            check.get("status"), check.get("items_total", ""), check.get("printed_total", ""),
+            check.get("expected_items_total", ""))
     if invoice.scan_id:
         headers["X-VBOCR-Scan-Id"] = invoice.scan_id
     if invoice.source:
@@ -194,19 +222,24 @@ def _latin1(text: str) -> str:
 
 
 def _scan_each(scanner: Scanner, saved: List[tuple], format: str) -> Response:
-    """Scan every file as its own invoice. A failing file is reported, not fatal."""
+    """Scan every file as its own invoice. A failing file is reported, not fatal.
+    A PDF that holds several invoices gives several entries (``part`` 1, 2, ... of ``parts``)."""
     results = []
     for name, path in saved:
-        entry = {"file": name}
         try:
-            invoice = scanner.scan([path], [name])
-            entry.update(invoice.to_dict())
-            entry["csv"] = scanner.to_csv(invoice)
+            invoices = scanner.scan_separate(path, name)
         except Exception as error:  # noqa: BLE001
             log.exception("Scan failed for %s", name)
             message = _with_upload_names(str(error).strip(), [(name, path)])
-            entry["error"] = "{}: {}".format(type(error).__name__, message[:500])
-        results.append(entry)
+            results.append({"file": name, "error": "{}: {}".format(type(error).__name__, message[:500])})
+            continue
+        for part, invoice in enumerate(invoices, start=1):
+            entry = {"file": name}
+            if len(invoices) > 1:
+                entry.update({"part": part, "parts": len(invoices)})
+            entry.update(invoice.to_dict())
+            entry["csv"] = scanner.to_csv(invoice)
+            results.append(entry)
 
     if format == "json":
         return JSONResponse({"invoices": results})
@@ -216,6 +249,8 @@ def _scan_each(scanner: Scanner, saved: List[tuple], format: str) -> Response:
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for entry in results:
             stem = Path(entry["file"]).stem or "invoice"
+            if entry.get("parts"):
+                stem = "{}_{}".format(stem, entry["part"])
             name, n = stem, 1
             while name.lower() in used:
                 n += 1
@@ -225,7 +260,7 @@ def _scan_each(scanner: Scanner, saved: List[tuple], format: str) -> Response:
                 archive.writestr(name + ".csv", "﻿" + entry["csv"])
             else:
                 archive.writestr(name + ".ERROR.txt", entry["error"])
-        summary = [{k: v for k, v in e.items() if k in ("file", "error", "warnings")} for e in results]
+        summary = [{k: v for k, v in e.items() if k in ("file", "part", "parts", "error", "warnings")} for e in results]
         archive.writestr("summary.json", json.dumps(summary, indent=2))
     headers = {"Content-Disposition": 'attachment; filename="invoices.zip"'}
     return Response(buffer.getvalue(), media_type="application/zip", headers=headers)

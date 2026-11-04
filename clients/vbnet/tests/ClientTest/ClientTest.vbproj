@@ -1,0 +1,15 @@
+<!-- Runs VbOcrClient against a running VB OCR server. See README.md in the folder above. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <OptionStrict>On</OptionStrict>
+    <RootNamespace></RootNamespace>
+    <NoWarn>SYSLIB0014</NoWarn>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\VbOcrClient.vb" />
+    <Compile Include="Program.vb" />
+  </ItemGroup>
+</Project>

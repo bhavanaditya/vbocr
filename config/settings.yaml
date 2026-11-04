@@ -11,6 +11,9 @@ server:
   # Access key for scans from other PCs. Empty = no key needed. When host is 0.0.0.0,
   # set a key in settings.local.yaml:   server: {api_key: "some-long-secret"}
   api_key: ""
+  # The browser page checks once a day whether a newer VB OCR is on GitHub (needs internet;
+  # nothing is sent except the request itself). false = never check.
+  check_updates: true
 
 ocr:
   # Passed straight to PaddleOCR. See docs/CONFIGURATION.md for details.
@@ -25,6 +28,12 @@ ocr:
   # oneDNN = Intel CPU acceleration. Some Windows PCs fail with
   # "ConvertPirAttribute2RuntimeAttribute not support"; then VB OCR switches it off by
   # itself, and install.bat saves "enable_mkldnn: false" in settings.local.yaml.
+
+# Phone photos are cleaned up before reading. Both steps only act when needed, so scans and
+# screenshots are not changed.
+photo:
+  flatten_page: true      # photo taken at an angle: find the paper's corners, make it flat
+  remove_shadows: true    # one side much darker than the other: even out the background
 
 # PDFs made by a computer (e-mailed invoices) contain real text. It is read directly:
 # faster than OCR and exact. Scanned PDFs (pictures of paper) are still read with OCR.
@@ -41,6 +50,12 @@ checks:
   total_labels: ["grand total", "net amount", "net total", "invoice total", "total amount",
                  "invoice value", "net payable", "amount payable", "total"]
   total_tolerance: 1.00   # rupees; covers round-off
+  # When the totals differ, these lines are tried to explain the difference
+  # (e.g. items + CGST + SGST + freight - discount + round off = grand total).
+  tax_labels: ["cgst", "sgst", "igst", "utgst", "gst", "cess", "tcs"]
+  charge_labels: ["freight", "packing", "forwarding", "transport", "courier", "cartage",
+                  "insurance", "other charges", "round off", "rounding off", "rounded off", "roundoff"]
+  discount_labels: ["discount", "cash discount", "trade discount", "scheme discount", "less"]
 
 # Every scan is saved here (JSON + CSV), for the "Recent scans" list and duplicate warnings.
 history:
@@ -49,11 +64,24 @@ history:
   keep_days: 365          # older scans are deleted automatically (0 = keep forever)
   warn_duplicates: true   # same supplier + invoice number scanned before
 
+# Scan every invoice that appears in a folder, while the server runs (e.g. the folder your
+# scanner saves to). Each file = one invoice. CSV files go to <folder>\csv, scanned files are
+# moved to <folder>\done (damaged ones to <folder>\failed). Empty folder = off.
+# Also possible without the server:  python -m vbocr watch C:\Invoices\Inbox
+watch:
+  folder: ""              # e.g. C:\Invoices\Inbox
+  output: ""              # default: <folder>\csv
+  interval_seconds: 3
+
 # Optional list of your items (CSV). Fills columns the invoice does not print, for example
 # M.R.P, Size or Article ID, by matching the SKU. See config/item_master.example.csv.
 item_master:
   file: config/item_master.csv
   overwrite: false        # true = values from the list replace values read from the invoice
+  # Values you correct in the browser (Size, M.R.P, ...) are remembered per SKU and supplier
+  # and filled in next time. Your own file above always wins.
+  learn: true
+  learned_file: config/item_master.learned.csv
 
 output:
   date_format: "%d-%m-%Y"     # 03-01-2026. Use "%d/%m/%Y" for 03/01/2026

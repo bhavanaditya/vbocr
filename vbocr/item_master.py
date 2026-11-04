@@ -8,6 +8,9 @@ The file is a normal CSV, for example exported from the purchase / billing softw
 Only "SKU No./Item ID." is required. Column titles are the purchase-entry CSV titles; a few
 other common names are accepted too (SKU, Item Code, MRP, ...). The SKU is matched ignoring
 case, spaces and punctuation. "Supplier" (optional) limits a row to invoices of that supplier.
+
+Values the user corrects in the browser are also remembered, in item_master.learned.csv (same
+layout). The main file always wins over the learned one.
 """
 
 import csv
@@ -15,7 +18,9 @@ import logging
 import re
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
+
+from .text_utils import to_float
 
 log = logging.getLogger(__name__)
 
@@ -107,19 +112,93 @@ def lookup(index: Dict[str, List[Dict[str, str]]], sku: str, supplier_name: str)
     return general[0] if general else None  # only rows for other suppliers
 
 
-def apply(items: List[Dict[str, str]], path: Path, supplier_name: str, overwrite: bool) -> int:
-    """Fill item values from the list. Returns the number of items found in the list."""
-    index = load(path)
-    if not index:
-        return 0
-    found = 0
-    for item in items:
-        row = lookup(index, item.get("sku", ""), supplier_name)
-        if row is None:
+NUMERIC = {"cost_price", "mrp"}
+TITLES = {"sku": "SKU No./Item ID.", "article_id": "Article ID", "brand": "Brand Name",
+          "design_name": "Design Name", "size": "Size", "cup_size": "Cup Size", "colour": "Colour",
+          "cost_price": "Cost Price", "mrp": "M.R.P", "supplier": "Supplier"}
+
+
+def _same(field: str, a: str, b: str) -> bool:
+    if field in NUMERIC:
+        return abs(to_float(a) - to_float(b)) < 0.005
+    return sku_key(a) == sku_key(b)
+
+
+def apply(
+    items: List[Dict[str, str]], paths: Iterable[Path], supplier_name: str, overwrite: bool
+) -> Tuple[int, List[Tuple[int, str]]]:
+    """Fill item values from the item list(s), first file first.
+
+    Returns (number of items found in a list, [(item index, field), ...] where the invoice
+    shows a different value than the list: worth a second look)."""
+    found = set()
+    conflicts: List[Tuple[int, str]] = []
+    for number, path in enumerate(paths):
+        index = load(Path(path))
+        if not index:
             continue
-        found += 1
-        for field in FILLABLE:
-            value = row.get(field, "")
-            if value and (overwrite or not item.get(field)):
-                item[field] = value
-    return found
+        for position, item in enumerate(items):
+            row = lookup(index, item.get("sku", ""), supplier_name)
+            if row is None:
+                continue
+            found.add(position)
+            for field in FILLABLE:
+                value = row.get(field, "")
+                if not value:
+                    continue
+                current = item.get(field, "")
+                if not current or (overwrite and number == 0):
+                    item[field] = value
+                elif not _same(field, current, value) and (position, field) not in conflicts:
+                    conflicts.append((position, field))
+    return len(found), conflicts
+
+
+_learn_lock = threading.Lock()
+
+
+def learn(path: Path, supplier_name: str, original: List[Dict[str, str]], items: List[Dict[str, str]]) -> int:
+    """Remember item values the user typed or corrected (by SKU and supplier), so the next
+    invoice with that SKU gets them filled in. Returns the number of values learned."""
+    from .history import match_rows
+
+    learned: Dict[str, Dict[str, str]] = {}
+    for item, index in zip(items, match_rows(original, items)):
+        key = sku_key(item.get("sku", ""))
+        if not key:
+            continue
+        before = original[index] if index is not None else {}
+        values = {f: item.get(f, "").strip() for f in FILLABLE
+                  if item.get(f, "").strip() and item.get(f, "") != before.get(f, "")}
+        if values:
+            learned.setdefault(key, {"sku": item["sku"].strip()}).update(values)
+    if not learned:
+        return 0
+
+    with _learn_lock:
+        rows: List[Dict[str, str]] = []
+        if path.is_file():
+            for entries in _read(path).values():
+                rows.extend(entries)
+        supplier = (supplier_name or "").strip()
+        count = 0
+        for key, values in learned.items():
+            target = next((r for r in rows if sku_key(r.get("sku", "")) == key
+                           and r.get("supplier", "").lower() == supplier.lower()), None)
+            if target is None:
+                target = {"sku": values["sku"], "supplier": supplier}
+                rows.append(target)
+            for field, value in values.items():
+                if field != "sku":
+                    target[field] = value
+                    count += 1
+        path.parent.mkdir(parents=True, exist_ok=True)
+        columns = ["sku"] + FILLABLE + ["supplier"]
+        with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow([TITLES[c] for c in columns])
+            for row in rows:
+                writer.writerow([row.get(c, "") for c in columns])
+        _cache.pop(str(path), None)
+        log.info("Item list: learned %d value(s) into %s", count, path)
+        return count

@@ -1,0 +1,29 @@
+<!-- Compiles VbOcrClient.vb and VbOcrScanForm.vb the way old projects do:
+     .NET Framework 2.0 with VB 9 (Visual Studio 2008) and .NET Framework 4.5 with VB 15
+     (Visual Studio 2017), Option Strict On, warnings as errors.
+     Run: dotnet build clients/vbnet/tests/BuildCheck  (works on Windows, macOS and Linux) -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFrameworks>net20;net45</TargetFrameworks>
+    <LangVersion Condition="'$(TargetFramework)' == 'net20'">9</LangVersion>
+    <LangVersion Condition="'$(TargetFramework)' == 'net45'">15</LangVersion>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>Off</OptionInfer>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PlatformTarget>x86</PlatformTarget>
+    <MyType>Empty</MyType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\VbOcrClient.vb" />
+    <Compile Include="..\..\VbOcrScanForm.vb" />
+    <Compile Include="Harness.vb" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Data" />
+    <Reference Include="Microsoft.VisualBasic" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

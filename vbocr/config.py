@@ -44,6 +44,10 @@ class Settings:
         return self.data.get("pdf") or {}
 
     @property
+    def photo(self) -> Dict[str, Any]:
+        return self.data.get("photo") or {}
+
+    @property
     def item_master(self) -> Dict[str, Any]:
         return self.data.get("item_master") or {}
 

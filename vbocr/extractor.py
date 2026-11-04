@@ -58,10 +58,12 @@ def extract_invoice(pages: List[Page], settings: Settings) -> Invoice:
 
     # Items from the optional item list: fill values the invoice does not print.
     master = settings.item_master
-    if master.get("file") and invoice.items:
-        item_master.apply(
-            invoice.items, settings.resolve(master["file"]), header["supplier_name"], bool(master.get("overwrite"))
-        )
+    lists = [settings.resolve(master[k]) for k in ("file", "learned_file") if master.get(k)]
+    if lists and invoice.items:
+        _, conflicts = item_master.apply(invoice.items, lists, header["supplier_name"], bool(master.get("overwrite")))
+        for index, field in conflicts:  # the invoice differs from your item list: check it
+            if index < len(item_scores):
+                item_scores[index][field] = 0.0
 
     _mark_unsure(invoice, found_scores, item_scores, settings)
     invoice.total_check = check_total(pages, invoice, settings)
@@ -75,6 +77,26 @@ def extract_invoice(pages: List[Page], settings: Settings) -> Invoice:
     if not invoice.items:
         invoice.warnings.append("No items found")
     return invoice
+
+
+def split_pages(pages: List[Page], settings: Settings) -> List[List[Page]]:
+    """Group the pages of one file into invoices: a page whose invoice number differs from the
+    current invoice's starts a new one. Pages without a number (continuation pages) stay with
+    the invoice before them."""
+    date_format = settings.output.get("date_format", "%d-%m-%Y")
+    groups: List[List[Page]] = []
+    current = ""
+    for page in pages:
+        supplier = settings.match_supplier(page.full_text)
+        labels = settings.header_labels(supplier).get("invoice_number") or []
+        number = compact(_find_labelled_value(page, "invoice_number", labels, date_format)[0])
+        if not groups or (number and current and number != current):
+            groups.append([page])
+        else:
+            groups[-1].append(page)
+        if number:
+            current = number
+    return groups
 
 
 def _mark_unsure(
@@ -134,11 +156,22 @@ def check_total(pages: List[Page], invoice: Invoice, settings: Settings) -> Dict
         if abs(value - items_total) <= tolerance:
             return {"status": "ok", "items_total": "{:.2f}".format(items_total),
                     "printed_total": "{:.2f}".format(value), "label": label}
+    adjustments = _find_adjustments(pages, settings)
+    for _, label, value in candidates:
+        explained = _explain_difference(value - items_total, adjustments, tolerance)
+        if explained is not None:
+            return {"status": "ok", "items_total": "{:.2f}".format(items_total),
+                    "printed_total": "{:.2f}".format(value), "label": label,
+                    "expected_items_total": "{:.2f}".format(value - sum(v for _, v in explained)),
+                    "note": "printed total = items" + "".join(
+                        " {} {} {:,.2f}".format("-" if v < 0 else "+", n, abs(v)) for n, v in explained),
+                    "adjustments": [{"label": n, "value": "{:.2f}".format(v)} for n, v in explained]}
     for _, label, value in candidates:
         for rate in _GST_RATES:
             if abs(value - items_total * (1 + rate)) <= tolerance + 0.01 * items_total * 0.01:
                 return {"status": "ok", "items_total": "{:.2f}".format(items_total),
                         "printed_total": "{:.2f}".format(value), "label": label,
+                        "expected_items_total": "{:.2f}".format(value / (1 + rate)),
                         "note": "printed total includes {:g}% GST".format(rate * 100)}
 
     best = min(candidates, key=lambda c: (c[0], -c[2]))
@@ -148,6 +181,76 @@ def check_total(pages: List[Page], invoice: Invoice, settings: Settings) -> Dict
     )
     return {"status": "mismatch", "items_total": "{:.2f}".format(items_total),
             "printed_total": "{:.2f}".format(best[2]), "label": best[1], "message": message}
+
+
+_SIGNED_NUMBER_RE = re.compile(r"^(?P<sign>\(-\)|-|\(?less\)?)?\s*(?:Rs\.?|INR|₹)?\s*(?P<num>[\d,]+(?:\.\d{1,2})?)\s*(?:/-)?\)?$", re.I)
+
+
+def _find_adjustments(pages: List[Page], settings: Settings) -> List[Tuple[str, float]]:
+    """Tax, charge and discount lines near the total: ("CGST", 120.0), ("Discount", -50.0), ...
+    A number printed with % (the rate) is not an amount."""
+    checks = settings.checks
+    kinds = [(l, 1) for l in checks.get("tax_labels") or []] + [(l, 1) for l in checks.get("charge_labels") or []]
+    kinds += [(l, -1) for l in checks.get("discount_labels") or []]
+    found: List[Tuple[str, float]] = []
+    seen = set()
+    for page in pages:
+        for word in page.words:
+            tokens = norm(word.text).split()
+            for label, sign in kinds:
+                label_tokens = norm(label).split()
+                if not label_tokens or not _starts_with_label(tokens, label_tokens):
+                    continue
+                value = _amount_on_line(page, word)
+                if value is None:
+                    break
+                amount = sign * abs(value) if sign < 0 or value >= 0 else value
+                key = (label.lower(), round(amount, 2))
+                if amount and key not in seen:
+                    seen.add(key)
+                    found.append((label.upper() if len(label) <= 5 else label.capitalize(), amount))
+                break
+    return found[:8]
+
+
+def _starts_with_label(tokens: List[str], label: List[str]) -> bool:
+    """'Add CGST @ 2.5%' and 'CGST' both start with the label CGST (after Add / Less)."""
+    while tokens and tokens[0] in ("add", "less", "by", "to"):
+        tokens = tokens[1:]
+    return tokens[:len(label)] == label
+
+
+def _amount_on_line(page: Page, word: Word) -> Optional[float]:
+    """The right-most amount on the label's line (signed), ignoring rates like '2.5%'."""
+    best = None
+    inline = re.split(r"[:=]", word.text, maxsplit=1)
+    parts = [(word.x2, inline[1].strip())] if len(inline) == 2 else []
+    for other in page.words:
+        if other is word or other.x1 < word.x2 - 0.5 * word.height:
+            continue
+        if abs(other.cy - word.cy) < 0.6 * max(word.height, other.height):
+            parts.append((other.x2, other.text.strip()))
+    for x, text in sorted(parts):
+        if "%" in text:
+            continue
+        match = _SIGNED_NUMBER_RE.match(text)
+        if match:
+            value = to_float(match.group("num"))
+            best = -value if match.group("sign") else value
+    return best
+
+
+def _explain_difference(difference: float, adjustments: List[Tuple[str, float]], tolerance: float):
+    """The smallest set of adjustments that adds up to the difference, or None."""
+    from itertools import combinations
+
+    if not adjustments:
+        return None
+    for size in range(1, len(adjustments) + 1):
+        for combo in combinations(adjustments, size):
+            if abs(sum(v for _, v in combo) - difference) <= tolerance:
+                return list(combo)
+    return None
 
 
 def _find_labelled_value(page: Page, field: str, labels: List[str], date_format: str) -> Tuple[str, float]:

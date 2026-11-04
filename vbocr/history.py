@@ -4,10 +4,12 @@ Used for the "Recent scans" list and to warn when the same invoice (same supplie
 invoice number) was scanned before.
 """
 
+import copy
 import json
 import logging
 import re
 import threading
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -55,6 +57,8 @@ class History:
                 scan_id += "-" + invoice_no
             invoice.scan_id = scan_id
             data = invoice.to_dict()
+            # What the OCR read, kept unchanged so corrections can be compared with it later.
+            data["original"] = copy.deepcopy({"header": invoice.header, "items": invoice.items})
             data.update({
                 "id": scan_id,
                 "scanned": now.strftime("%d-%m-%Y %H:%M"),
@@ -71,19 +75,64 @@ class History:
                 invoice.scan_id = ""
             self._prune_once()
 
-    def update(self, scan_id: str, invoice: Invoice, csv_text: str) -> bool:
-        """Save values the user corrected after the scan."""
+    def update(self, scan_id: str, invoice: Invoice, csv_text: str) -> Optional[Dict]:
+        """Save values the user corrected after the scan. Returns the original OCR values
+        ({"header", "items", "supplier"}) so the caller can learn from the changes, or None
+        when the scan is not in the history."""
         with self._lock:
             path = self._path(scan_id)
             if not _ID_RE.match(scan_id) or not path.is_file():
-                return False
+                return None
             data = json.loads(path.read_text(encoding="utf-8"))
+            original = data.get("original") or {"header": data.get("header") or {}, "items": data.get("items") or []}
+            data["original"] = original
             data["header"] = invoice.header
             data["items"] = invoice.items
             data["csv"] = csv_text
             data["corrected"] = datetime.now().strftime("%d-%m-%Y %H:%M")
+            data["changes"] = changes(original, invoice.header, invoice.items)
             path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-            return True
+            return original
+
+    def correction_stats(self, days: int = 90) -> Dict:
+        """What users corrected, to see where the reading needs improving:
+        {"scans", "corrected", "fields": {field: count}, "suppliers": [{name, scans, corrected,
+        fields: {field: count}}], "rows_added", "rows_deleted"}."""
+        cutoff = (datetime.now() - timedelta(days=max(1, days))).strftime("%Y%m%d")
+        total, corrected = 0, 0
+        fields: Counter = Counter()
+        suppliers: Dict[str, Dict] = {}
+        added = deleted = 0
+        for path in self._files_newest_first():
+            if path.name[:8] < cutoff:
+                break
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            name = ((data.get("original") or data).get("header") or {}).get("supplier_name") or "(unknown supplier)"
+            entry = suppliers.setdefault(name, {"name": name, "scans": 0, "corrected": 0, "fields": Counter()})
+            total += 1
+            entry["scans"] += 1
+            scan_changes = data.get("changes") or []
+            if not scan_changes:
+                continue
+            corrected += 1
+            entry["corrected"] += 1
+            for change in scan_changes:
+                kind = change.get("kind")
+                if kind == "row_added":
+                    added += 1
+                elif kind == "row_deleted":
+                    deleted += 1
+                else:
+                    fields[change["field"]] += 1
+                    entry["fields"][change["field"]] += 1
+        ranked = sorted(suppliers.values(), key=lambda e: (-e["corrected"], -e["scans"]))
+        for entry in ranked:
+            entry["fields"] = dict(entry["fields"].most_common())
+        return {"days": days, "scans": total, "corrected": corrected, "fields": dict(fields.most_common()),
+                "rows_added": added, "rows_deleted": deleted, "suppliers": ranked}
 
     # ---------------------------------------------------------------- reading
 
@@ -165,3 +214,54 @@ class History:
                     path.unlink()
                 except OSError:
                     pass
+
+
+def match_rows(original: List[Dict[str, str]], items: List[Dict[str, str]]) -> List[Optional[int]]:
+    """For each corrected item, the index of the same item in the OCR result (by SKU, else by
+    position when that row has no better match), or None for a row the user added."""
+    by_sku: Dict[str, List[int]] = {}
+    for index, item in enumerate(original):
+        key = _key(item.get("sku", ""))
+        if key:
+            by_sku.setdefault(key, []).append(index)
+    used = set()
+    result: List[Optional[int]] = []
+    for position, item in enumerate(items):
+        found = None
+        for index in by_sku.get(_key(item.get("sku", "")), []):
+            if index not in used:
+                found = index
+                break
+        if found is None and position < len(original) and position not in used:
+            before = original[position]
+            other = _key(before.get("sku", ""))
+            alike = sum(1 for f in ("design_name", "quantity", "cost_price", "mrp", "amount")
+                        if item.get(f) and item.get(f) == before.get(f))
+            if alike >= 2 and (not other or other not in {_key(i.get("sku", "")) for i in items}):
+                found = position  # same place and mostly the same values: the SKU was corrected
+        if found is not None:
+            used.add(found)
+        result.append(found)
+    return result
+
+
+def changes(original: Dict, header: Dict[str, str], items: List[Dict[str, str]]) -> List[Dict]:
+    """Differences between the OCR result and the corrected values."""
+    found: List[Dict] = []
+    for field, value in header.items():
+        before = (original.get("header") or {}).get(field, "")
+        if (value or "") != (before or ""):
+            found.append({"row": 0, "field": field, "from": before, "to": value})
+    old_items = original.get("items") or []
+    matches = match_rows(old_items, items)
+    for row, (item, index) in enumerate(zip(items, matches), start=1):
+        if index is None:
+            found.append({"row": row, "kind": "row_added"})
+            continue
+        for field, value in item.items():
+            before = old_items[index].get(field, "")
+            if (value or "") != (before or ""):
+                found.append({"row": row, "field": field, "from": before, "to": value})
+    for index in sorted(set(range(len(old_items))) - {i for i in matches if i is not None}):
+        found.append({"row": index + 1, "kind": "row_deleted"})
+    return found

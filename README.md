@@ -1,21 +1,31 @@
 # VB OCR
 
+[![CI](https://github.com/bhavanaditya/vbocr/actions/workflows/ci.yml/badge.svg)](https://github.com/bhavanaditya/vbocr/actions/workflows/ci.yml)
+
 Read supplier invoice photos and scans and turn them into a **purchase-entry CSV** for a VB.NET application.
 
 - **Free and open source.** No subscriptions, API keys or per-scan charges.
 - **Runs offline** on your own Windows PC. Internet is needed only once, during installation.
-- Handles **phone photos**, including sideways and slightly tilted pictures.
+- Handles **phone photos**: pages photographed at an angle are flattened, shadows evened out,
+  and sideways or upside-down pictures turned the right way.
 - Reads **JPG, PNG, BMP, TIFF, WEBP, GIF and PDF**. Several pages per invoice, or many invoices at once.
 - **Many ways to upload:** choose files or a folder, drag and drop, paste a screenshot (Ctrl+V), or take a phone photo.
 - Works with **any supplier layout** that has an item table with a serial-number column.
 - Outputs the **exact CSV layout** of the purchase-entry Excel sheet.
 - **Digital PDFs are read exactly** from their text, in well under a second. Scanned PDFs use OCR.
 - **Points out what to check:** values the OCR was not sure about are highlighted, and the item
-  total is compared with the total printed on the invoice.
-- **Correct values on screen** before downloading; corrections are saved.
+  total is compared with the total printed on the invoice, including GST, freight, discount and
+  round-off lines.
+- **Correct values on screen** before downloading; corrections are saved, and item values you
+  type (Size, M.R.P, …) are remembered for the next invoice with that SKU.
+- **Watch a folder:** every invoice your scanner saves there is read automatically.
+- A PDF holding **several invoices** is split into one CSV per invoice.
 - **Scan history** with search, and a warning when the same invoice is scanned twice.
 - Optional **item list** (CSV) fills columns the invoice does not print, such as M.R.P or Size.
 - Optional **access key** when the server is shared on the office network.
+- **Easy to install and keep current:** `install.bat` can install Python for you, `update.bat`
+  updates in one click, and the browser page says when a new version is out.
+- **Tested on Windows on every change** (GitHub Actions), and a test bench for your own invoices.
 
 Built on [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (Apache-2.0), [FastAPI](https://fastapi.tiangolo.com/) (MIT) and [Uvicorn](https://www.uvicorn.org/) (BSD).
 
@@ -118,7 +128,7 @@ More options, including all the ways to upload, are in [docs/USAGE.md](docs/USAG
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | `settings.yaml`: OCR model, date format, column names |
 | [ADDING_SUPPLIERS.md](docs/ADDING_SUPPLIERS.md) | Handling a new supplier's invoice format |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common problems and fixes |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Project layout, running tests, how the table reader works |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Project layout, running tests, testing with your own invoices, how the table reader works |
 
 ## Requirements at a glance
 

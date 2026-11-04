@@ -134,6 +134,16 @@ The label on the invoice is not in `header_fields`. Add it, see [CONFIGURATION.m
 Large decorative logos are hard to read. Add a supplier profile with the correct `name`
 ([ADDING_SUPPLIERS.md](ADDING_SUPPLIERS.md)).
 
+### A phone photo is cropped wrongly
+The photo clean-up looks for the edges of the paper. When something else looks like a page edge
+(a second sheet, a box), set `photo: flatten_page: false` in `config\settings.local.yaml`, or take
+the photo with the page on a plain, darker surface.
+
+### A PDF with several invoices became one invoice
+In **One invoice** mode all files and pages are one invoice (the result warns when the pages have
+different invoice numbers). Choose **Separate invoices** in the browser, `scan.bat --each`, or
+`ScanEach` in VB.NET: then every invoice in the PDF gets its own CSV.
+
 ### Scanning is slow
 
 - Make sure the default `small` models are used.

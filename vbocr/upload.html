@@ -34,6 +34,7 @@ button,input{font:inherit;color:inherit}
 .spacer{flex:1}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12.5px;font-weight:600;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.update{background:var(--primary-soft);color:var(--primary);border-color:transparent;cursor:help}
 .pill.ok .dot{background:var(--success)}.pill.loading .dot{background:var(--warning);animation:pulse 1.2s infinite}.pill.off .dot{background:var(--danger)}
 @keyframes pulse{50%{opacity:.35}}
 .toplink{color:var(--muted);text-decoration:none;font-size:13px}.toplink:hover{color:var(--primary)}
@@ -156,6 +157,9 @@ tr:hover .rowdel{opacity:1}
 .history input[type=search]:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-ring)}
 .hrow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-top:8px;cursor:pointer;background:var(--surface)}
 .hrow:hover{border-color:var(--primary);background:var(--primary-soft)}
+.cstats{margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text-2)}
+.cstats summary{cursor:pointer;font-weight:600;color:var(--text)}
+.cstats ul{margin:6px 0 2px 18px;padding:0}.cstats li{margin:3px 0}
 .hrow b{font-weight:600}.hrow small{color:var(--muted)}.hrow .amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 
 /* Access key dialog */
@@ -180,6 +184,7 @@ tr:hover .rowdel{opacity:1}
   <div class="spacer"></div>
   <button id="openHistory" class="btn small" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>Recent scans</button>
   <a class="toplink" href="/docs" target="_blank" rel="noopener">API</a>
+  <span id="update" class="pill update hidden"></span>
   <span id="health" class="pill loading"><span class="dot"></span><span id="healthText">Connecting…</span></span>
 </header>
 
@@ -299,6 +304,7 @@ async function checkHealth() {
     const d = await r.json();
     keyRequired = !!d.key_required;
     if (d.status === 'ok') { state = 'ok'; text = 'Ready · v' + d.version + (d.key_required ? ' · 🔒' : ''); }
+    if (d.check_updates && !updateChecked) { updateChecked = true; checkForUpdate(d.version); }
     else { state = 'loading'; text = 'Loading OCR…'; }
   } catch (e) { /* offline */ }
   $('health').className = 'pill ' + state;
@@ -306,6 +312,35 @@ async function checkHealth() {
   setTimeout(checkHealth, state === 'ok' ? 30000 : 3000);
 }
 checkHealth();
+
+/* ---------- newer version available? (once a day; silent when there is no internet) ---------- */
+let updateChecked = false;
+const VERSION_URL = 'https://raw.githubusercontent.com/bhavanaditya/vbocr/main/vbocr/__init__.py';
+function newer(a, b) {   // true when version a > b
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
+}
+async function checkForUpdate(current) {
+  let latest = '';
+  try {
+    const cached = JSON.parse(localStorage.getItem('vbocrLatest') || 'null');
+    if (cached && Date.now() - cached.at < 86400000) latest = cached.version;
+    else {
+      const r = await fetch(VERSION_URL, {cache: 'no-store'});
+      const m = r.ok && (await r.text()).match(/__version__\s*=\s*["']([\d.]+)["']/);
+      if (!m) return;
+      latest = m[1];
+      localStorage.setItem('vbocrLatest', JSON.stringify({version: latest, at: Date.now()}));
+    }
+  } catch (e) { return; }
+  if (latest && newer(latest, current)) {
+    const pill = $('update');
+    pill.textContent = 'Update available: v' + latest;
+    pill.title = 'A newer VB OCR is available. Close the server and double-click update.bat in the VB OCR folder.';
+    pill.classList.remove('hidden');
+  }
+}
 
 /* ---------- page list ---------- */
 function addFiles(list) {
@@ -500,7 +535,12 @@ function invoiceCard(inv, index, seconds) {
   savebar.appendChild(el('span', 'spacer'));
   if (inv.scan_id || inv.id) {
     const save = el('button', 'btn small primary', 'Save corrections'); save.type = 'button';
-    save.onclick = async () => { try { await currentCsv(inv); toast('Corrections saved in the scan history'); } catch (e) { toast(e.message, true); } };
+    save.onclick = async () => {
+      try {
+        await currentCsv(inv);
+        toast(inv.learned > 0 ? 'Corrections saved. ' + inv.learned + ' item value(s) remembered for next time' : 'Corrections saved in the scan history');
+      } catch (e) { toast(e.message, true); }
+    };
     savebar.appendChild(save);
   }
   const markDirty = () => { inv.dirty = true; savebar.classList.remove('hidden'); updateStats(); };
@@ -518,8 +558,9 @@ function invoiceCard(inv, index, seconds) {
     tiles.qty.textContent = qtyFmt(qty);
     tiles.amount.textContent = '₹ ' + money(amt);
     if (check.printed_total) {
-      const diff = Math.abs(num(check.printed_total) - amt);
-      const matches = diff <= 1 || check.note;
+      // compare with what the items should add up to (printed total less tax / charges found)
+      const expected = num(check.expected_items_total || check.printed_total);
+      const matches = Math.abs(expected - amt) <= Math.max(1, expected * 0.0002);
       tiles.check.textContent = '₹ ' + money(num(check.printed_total)) + (matches ? ' ✓' : ' ✗');
       tiles.check.style.color = matches ? 'var(--success)' : 'var(--danger)';
       tiles.check.title = (check.label || '') + (check.note ? ' - ' + check.note : '');
@@ -626,6 +667,7 @@ async function currentCsv(inv) {
   const r = await api('/csv', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({header: inv.header, items: inv.items, supplier_profile: inv.supplier_profile || '', scan_id: inv.scan_id || inv.id || ''})});
   if (!r.ok) throw new Error(await errorText(r));
+  inv.learned = +(r.headers.get('X-VBOCR-Learned') || 0);
   inv.csv = await r.text(); inv.dirty = false;
   return inv.csv;
 }
@@ -642,7 +684,9 @@ async function showHistory() {
   const card = el('div', 'card history');
   const search = el('input'); search.type = 'search'; search.placeholder = 'Search supplier, invoice number or file name'; search.value = historyQuery;
   const list = el('div');
-  card.append(search, list); box.appendChild(card);
+  const corrections = el('div');
+  card.append(search, corrections, list); box.appendChild(card);
+  loadCorrectionStats(corrections);
   search.oninput = () => { clearTimeout(historyTimer); historyTimer = setTimeout(() => { historyQuery = search.value; load(); }, 250); };
   async function load() {
     list.innerHTML = '';
@@ -665,6 +709,29 @@ async function showHistory() {
     } catch (e) { list.appendChild(el('p', 'hint', e.message)); }
   }
   load(); search.focus();
+}
+/* "What gets corrected": shows where the reading needs improving (a supplier profile, better
+   photos, or the item list). */
+const FIELD_TITLES = Object.fromEntries(HEADER_FIELDS.concat(ITEM_COLUMNS).map(([k, t]) => [k, t]));
+async function loadCorrectionStats(box) {
+  try {
+    const r = await api('/stats?days=90');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d.enabled || !d.scans) return;
+    const details = el('details', 'cstats');
+    const share = Math.round(100 * d.corrected / d.scans);
+    details.appendChild(el('summary', null, 'What gets corrected (last 90 days): ' + d.corrected + ' of ' + d.scans + ' scans (' + share + '%)'));
+    const fieldText = f => Object.entries(f).slice(0, 4).map(([k, n]) => (FIELD_TITLES[k] || k) + ' ' + n + '×').join(', ');
+    const ul = el('ul');
+    if (Object.keys(d.fields).length) ul.appendChild(el('li', null, 'Most corrected: ' + fieldText(d.fields)));
+    if (d.rows_added || d.rows_deleted) ul.appendChild(el('li', null, 'Rows added by hand: ' + d.rows_added + ' · rows deleted: ' + d.rows_deleted + (d.rows_added ? ' (missed rows: try sharper, straighter photos)' : '')));
+    d.suppliers.filter(s => s.corrected).slice(0, 5).forEach(s => ul.appendChild(el('li', null,
+      s.name + ': ' + s.corrected + ' of ' + s.scans + ' corrected' + (Object.keys(s.fields).length ? ' (' + fieldText(s.fields) + ')' : ''))));
+    if (!d.corrected) ul.appendChild(el('li', null, 'No corrections needed so far.'));
+    details.appendChild(ul);
+    box.appendChild(details);
+  } catch (e) { /* optional */ }
 }
 async function openScan(id) {
   try {

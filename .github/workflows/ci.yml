@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Fast: the reading logic, without the OCR engine (Linux and Windows).
+  unit-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest PyYAML Pillow numpy opencv-python-headless pypdfium2 fastapi python-multipart
+      - run: python -m pytest -q tests
+
+  # The real thing on Windows: install.bat, OCR models, end-to-end scans, the VB.NET client,
+  # and the Windows scripts.
+  windows-full:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      VBOCR_YES: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: ocr-models-${{ hashFiles('requirements.txt', 'config/settings.yaml') }}
+
+      - name: install.bat (packages, models, oneDNN self-test)
+        shell: cmd
+        run: call install.bat
+
+      - name: Test files
+        shell: cmd
+        run: .venv\Scripts\python.exe tests\make_test_files.py test-files
+
+      - name: All tests, including end-to-end OCR
+        shell: cmd
+        env:
+          VBOCR_OCR_TESTS: "1"
+        run: |
+          .venv\Scripts\python.exe -m pip install pytest
+          .venv\Scripts\python.exe -m pytest -q tests
+
+      - name: Command line scan
+        shell: cmd
+        run: |
+          call scan.bat test-files\a_bill.jpg -o test-files\a_bill.csv
+          type test-files\a_bill.csv
+          findstr /C:"SG/25-26/0042" test-files\a_bill.csv
+
+      - name: VB.NET build check (.NET 2.0 / VB 9 and .NET 4.5 / VB 15)
+        run: dotnet build clients/vbnet/tests/BuildCheck
+
+      - name: Start the server with an access key
+        shell: pwsh
+        run: |
+          Add-Content config\settings.local.yaml "`nserver:`n  api_key: ci-key-123`n"
+          Start-Process .venv\Scripts\python.exe -ArgumentList '-m','vbocr','serve','--port','5077' `
+            -RedirectStandardError server.log -RedirectStandardOutput server.out.log -WindowStyle Hidden
+          for ($i = 0; $i -lt 90; $i++) {
+            try { if ((Invoke-RestMethod http://127.0.0.1:5077/health).status -eq 'ok') { exit 0 } } catch {}
+            Start-Sleep 2
+          }
+          Get-Content server.log -Tail 50
+          exit 1
+
+      - name: VB.NET client against the server
+        run: dotnet run --project clients/vbnet/tests/ClientTest -- http://127.0.0.1:5077 test-files ci-key-123
+
+      - name: autostart-on.bat starts the server hidden (port 5000)
+        shell: pwsh
+        run: |
+          cmd /c "autostart-on.bat < NUL"
+          for ($i = 0; $i -lt 90; $i++) {
+            try { if ((Invoke-RestMethod http://127.0.0.1:5000/health).status -eq 'ok') { break } } catch {}
+            Start-Sleep 2
+          }
+          (Invoke-RestMethod http://127.0.0.1:5000/health).status
+          if (-not (Test-Path logs\server.log)) { throw "logs\server.log missing" }
+          cmd /c "autostart-off.bat < NUL"
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\VB OCR server.vbs") { throw "still in Startup" }
+
+      - name: update.bat stops the servers and updates
+        shell: pwsh
+        run: |
+          cmd /c "update.bat < NUL"
+          if ($LASTEXITCODE -ne 0) { throw "update.bat failed" }
+          Start-Sleep 3
+          $running = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr serve*' }
+          if ($running) { throw "server still running" }
+
+      - name: Logs
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path server.log) { Get-Content server.log -Tail 80 }
+          if (Test-Path logs\server.log) { Get-Content logs\server.log -Tail 40 }
+          if (Test-Path logs\last-error.txt) { Get-Content logs\last-error.txt }

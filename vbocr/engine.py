@@ -36,9 +36,15 @@ MAX_IMAGE_SIDE = 4000
 class OcrEngine:
     """Loads PaddleOCR once and reuses it. PaddleOCR is not thread-safe, so calls are serialised."""
 
-    def __init__(self, options: Optional[Dict[str, Any]] = None, pdf_options: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        options: Optional[Dict[str, Any]] = None,
+        pdf_options: Optional[Dict[str, Any]] = None,
+        photo_options: Optional[Dict[str, Any]] = None,
+    ):
         self._options = dict(options or {})
         self._pdf = dict(pdf_options or {})
+        self._photo = dict(photo_options or {})
         self._lock = threading.Lock()
         self.mkldnn_fallback = False  # True after oneDNN failed and was switched off
         self._ocr = self._create(self._options)
@@ -62,19 +68,47 @@ class OcrEngine:
                 render_dpi=int(self._pdf.get("render_dpi", 200)),
             )
         else:
-            parts = [("image", frame) for frame in load_inputs(path)]
+            parts = [("image", self._clean_photo(frame, Path(path).name)) for frame in load_inputs(path)]
         pages = []
         with self._lock:
             for kind, item in parts:
                 if kind == "text":
                     pages.append(item)
                 else:
-                    pages.extend(_to_page(result) for result in self._predict(item))
+                    pages.extend(_to_page(self._upright(result)) for result in self._predict(item))
         return pages
 
-    def _predict(self, item: Any) -> List[Any]:
+    def _clean_photo(self, frame: Any, name: str) -> Any:
+        from .preprocess import prepare
+
+        frame, done = prepare(
+            frame,
+            flatten_page=bool(self._photo.get("flatten_page", True)),
+            remove_shadows=bool(self._photo.get("remove_shadows", True)),
+        )
+        if done:
+            log.info("%s: %s", name, ", ".join(done))
+        return frame
+
+    def _upright(self, result: Any) -> Any:
+        """PaddleOCR's page-orientation model sometimes turns a sparse, upright invoice upside
+        down (and misses photos taken upside down). Then most text lines are read upside down:
+        read the page again, turned the right way up and without the orientation step."""
+        if not _mostly_upside_down(result):
+            return result
+        image = _page_image(result)
+        if image is None:
+            return result
+        import numpy as np
+
+        log.info("Page was upside down: reading it again the right way up")
+        turned = np.ascontiguousarray(image[::-1, ::-1])
+        again = self._predict(turned, use_doc_orientation_classify=False)
+        return again[0] if again else result
+
+    def _predict(self, item: Any, **options: Any) -> List[Any]:
         try:
-            return list(self._ocr.predict(item))
+            return list(self._ocr.predict(item, **options))
         except Exception as error:  # noqa: BLE001 - PaddlePaddle raises many error types
             if "enable_mkldnn" in self._options:
                 raise
@@ -91,7 +125,7 @@ class OcrEngine:
             self._options["enable_mkldnn"] = False
             self._ocr = self._create(self._options)
             self.mkldnn_fallback = True
-            return list(self._ocr.predict(item))
+            return list(self._ocr.predict(item, **options))
 
     def self_test(self) -> int:
         """Read a small generated image to check the OCR really runs on this PC.
@@ -179,6 +213,17 @@ def _to_page(result: Any) -> Page:
     image = _page_image(result)
     height, width = image.shape[:2] if image is not None else (_extent(words, "y2"), _extent(words, "x2"))
     return Page(words=words, width=float(width), height=float(height))
+
+
+def _mostly_upside_down(result: Any) -> bool:
+    """True when most of the text (by number of characters) was read upside down."""
+    texts = list(result.get("rec_texts") or []) if hasattr(result, "get") else []
+    angles = result.get("textline_orientation_angles") if hasattr(result, "get") else None
+    if angles is None or len(angles) != len(texts):
+        return False
+    flipped = sum(len(str(t).strip()) for t, a in zip(texts, angles) if int(a) == 1)
+    total = sum(len(str(t).strip()) for t in texts)
+    return total > 0 and flipped > 0.6 * total
 
 
 def _page_image(result: Any) -> Any:

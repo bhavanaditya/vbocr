@@ -40,7 +40,11 @@ server:
   host: 127.0.0.1   # 0.0.0.0 = accept connections from other PCs
   port: 5000
   api_key: ""       # set in settings.local.yaml when other PCs can connect
+  check_updates: true
 ```
+
+`check_updates`: the browser page asks GitHub once a day whether a newer VB OCR exists and then
+shows **Update available**. Nothing about your invoices is sent. `false` = never check.
 
 With `api_key` set, scans, the history and `/csv` need the key: the browser page asks for it once,
 the VB.NET client sends `VbOcrClient.ApiKey`, curl sends `-H "X-API-Key: ..."`. The server prints a
@@ -182,6 +186,9 @@ checks:
   min_confidence: 0.90
   total_labels: ["grand total", "net amount", ...]
   total_tolerance: 1.00
+  tax_labels: ["cgst", "sgst", "igst", "utgst", "gst", "cess", "tcs"]
+  charge_labels: ["freight", "packing", ..., "round off"]
+  discount_labels: ["discount", "cash discount", ..., "less"]
 ```
 
 - Values the OCR read with confidence below `min_confidence` (0 to 1), and numbers where a letter
@@ -189,6 +196,40 @@ checks:
 - The sum of the item amounts is compared with the amount next to the first of `total_labels`
   found on the invoice. A difference above `total_tolerance` rupees gives a warning. Totals that
   match after adding 3, 5, 12, 18 or 28 % GST also count as a match.
+- When they still differ, the amounts on the invoice's tax, charge and discount lines are tried:
+  for example *items − discount + CGST + SGST + freight = grand total* is a match, shown as
+  "printed total = items − Discount 100.00 + CGST 116.03 + …". Rates such as `2.5%` are ignored;
+  discounts are subtracted.
+
+## `photo`
+
+```yaml
+photo:
+  flatten_page: true
+  remove_shadows: true
+```
+
+Phone photos are cleaned up before reading. `flatten_page` finds the four corners of the paper
+when it lies on a table or floor, and straightens a page photographed at an angle.
+`remove_shadows` evens out the background when one part of the page is much darker. Both only
+act when needed: scans, screenshots and already cropped photos are not changed. Switch one off
+if it ever makes a photo worse.
+
+Pages that are upside down (a photo taken the wrong way round, or a page the orientation model
+turned wrongly) are noticed and read again the right way up.
+
+## `watch`
+
+```yaml
+watch:
+  folder: ""            # e.g. C:\Invoices\Inbox
+  output: ""            # default: <folder>\csv
+  interval_seconds: 3
+```
+
+With a folder set, the server reads every invoice that appears in it (see "Watch a folder" in
+[USAGE.md](USAGE.md#watch-a-folder)). Put it in `settings.local.yaml`. Without the server, use
+`watch-folder.bat` instead.
 
 ## `history`
 
@@ -211,6 +252,8 @@ The images themselves are not stored.
 item_master:
   file: config/item_master.csv
   overwrite: false
+  learn: true
+  learned_file: config/item_master.learned.csv
 ```
 
 An optional list of your items, for example exported from your billing software. When a scanned
@@ -223,3 +266,11 @@ Copy `config\item_master.example.csv` to `config\item_master.csv` and fill it in
 work too. Comma, semicolon or tab separated. SKUs match ignoring case, spaces and punctuation.
 An optional `Supplier` column limits a row to invoices from that supplier. The file is re-read
 automatically when it changes.
+
+**Learning (`learn: true`).** When a user corrects or types an item value in the browser and
+clicks **Save corrections**, the value is remembered per SKU and supplier in
+`config\item_master.learned.csv` (same layout, you can edit or delete it). The next invoice with
+that SKU gets empty columns filled from it. Your own `item_master.csv` always wins.
+
+When the invoice shows a different value than a list (for example another M.R.P), the invoice
+value is kept but marked **unsure**, so the user looks at it.

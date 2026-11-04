@@ -127,10 +127,38 @@ in Explorer. The window stays open at the end so you can read the result.
 
 Warnings (for example `Item 3: missing quantity`) are printed to the error output, prefixed with `WARNING:`.
 
+A PDF (or TIFF) that holds **several invoices** (pages with different invoice numbers) gives one
+CSV per invoice with `--each` or a folder: `bills_1.csv`, `bills_2.csv`, … Without `--each`
+all pages are one invoice, and the result warns when the pages look like different invoices.
+
+### Watch a folder
+
+Let the office scanner (or WhatsApp Desktop, or a phone sync app) save into a folder, and every
+new invoice there is read automatically:
+
+```bat
+watch-folder.bat C:\Invoices\Inbox
+watch-folder.bat C:\Invoices\Inbox D:\Purchase\CSV
+```
+
+| Where | What |
+|---|---|
+| `Inbox\csv\bill.csv` | the CSV (or the second folder you give) |
+| `Inbox\done\bill.jpg` | the scanned file, moved so it is not read twice |
+| `Inbox\failed\bill.jpg` + `.error.txt` | a file that could not be read, and why |
+
+Each file is one invoice (a PDF with several invoices gives several CSVs). A file is taken only
+once it has stopped growing, so a scan that is still being saved is not read half-written. The
+scans also appear under **Recent scans**. To watch while the server runs (no extra window), set
+`watch: folder:` in `config\settings.local.yaml` (see [CONFIGURATION.md](CONFIGURATION.md#watch)).
+
 ### Other commands
 
 ```bat
 .venv\Scripts\python.exe -m vbocr serve [--host HOST] [--port PORT]   rem start the server
+.venv\Scripts\python.exe -m vbocr watch FOLDER [-o CSV_FOLDER]         rem watch a folder
+.venv\Scripts\python.exe -m vbocr add-sample FILES... [--name NAME]    rem test bench, see DEVELOPMENT.md
+.venv\Scripts\python.exe -m vbocr check-samples                        rem test bench
 .venv\Scripts\python.exe -m vbocr setup                               rem download models
 .venv\Scripts\python.exe -m vbocr --version
 ```
@@ -148,7 +176,7 @@ Shows whether the server is ready. `status` is `loading` while the OCR engine st
 requests then answer `503`.
 
 ```json
-{"status": "ok", "version": "1.0.0", "key_required": false}
+{"status": "ok", "version": "1.1.0", "key_required": false, "check_updates": true}
 ```
 
 ### `POST /scan`
@@ -166,9 +194,14 @@ Scans one invoice.
 ```json
 {"invoices": [
   {"file": "bill1.jpg", "header": {...}, "items": [...], "warnings": [], "csv": "..."},
+  {"file": "bills.pdf", "part": 1, "parts": 2, "header": {...}, ...},
+  {"file": "bills.pdf", "part": 2, "parts": 2, "header": {...}, ...},
   {"file": "bad.png", "error": "ValueError: Cannot read image bad.png: ..."}
 ]}
 ```
+
+A PDF with several invoices gives one entry per invoice (`part` of `parts`), named
+`bills_1.csv`, `bills_2.csv` in the ZIP.
 
 and for `format=csv` a ZIP file `invoices.zip` with one CSV per file, a `<name>.ERROR.txt` for each
 file that failed, and `summary.json`. The headers below are only sent in `pages` mode.
@@ -180,7 +213,7 @@ file that failed, and `summary.json`. The headers below are only sent in `pages`
 | `X-VBOCR-Item-Count` | Number of item rows found |
 | `X-VBOCR-Warnings` | Problems found, separated by ` \| `. Only present when there are warnings |
 | `X-VBOCR-Unsure` | Values the OCR was not sure about, separated by `;`. `Invoice Number` = a header value, `3:Quantity` = the quantity of item 3 |
-| `X-VBOCR-Total-Check` | `status\|items total\|printed total`, e.g. `mismatch\|4741.10\|5743.10`. Status: `ok`, `mismatch`, `not_found`, `no_items` |
+| `X-VBOCR-Total-Check` | `status\|items total\|printed total\|expected items total`, e.g. `mismatch\|4741.10\|5743.10\|`. Status: `ok`, `mismatch`, `not_found`, `no_items`. The last part is set when the printed total includes GST, freight or a discount: what the items should add up to |
 | `X-VBOCR-Scan-Id` | ID of the scan in the history (when history is on) |
 | `X-VBOCR-Source` | `ocr`, or `pdf-text` when every page was read from a digital PDF's text |
 
@@ -259,6 +292,16 @@ saved in the scan history.
 ```bat
 curl -H "Content-Type: application/json" -d @invoice.json http://127.0.0.1:5000/csv -o invoice.csv
 ```
+
+The response header `X-VBOCR-Learned` tells how many item values (Size, M.R.P, …) were remembered
+for next time (see `item_master.learn` in [CONFIGURATION.md](CONFIGURATION.md#item_master)).
+
+### `GET /stats`
+
+What users corrected in the last `days` (default 90): `{"scans", "corrected", "fields":
+{"quantity": 5, ...}, "rows_added", "rows_deleted", "suppliers": [{"name", "scans", "corrected",
+"fields"}]}`. Shown in the browser under **Recent scans → What gets corrected**. Use it to see
+which supplier needs a profile (see [ADDING_SUPPLIERS.md](ADDING_SUPPLIERS.md)) or better photos.
 
 ### `GET /history`
 

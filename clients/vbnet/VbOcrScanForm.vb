@@ -77,6 +77,7 @@ Public Class VbOcrScanForm
 
     Private _invoice As VbOcrInvoice
     Private _printedTotal As Decimal = -1D
+    Private _expectedItems As Decimal = -1D
     ' Values the OCR was not sure about: item row -> column titles. Cleared when the user edits them.
     Private ReadOnly _unsureItems As New Dictionary(Of DataRow, List(Of String))
     Private _scanStarted As DateTime
@@ -987,6 +988,8 @@ Public Class VbOcrScanForm
         Next
         _printedTotal = -1D
         If result.PrintedTotal.Length > 0 Then _printedTotal = VbOcrInvoice.ToDecimal(result.PrintedTotal)
+        _expectedItems = -1D
+        If result.ExpectedItemsTotal.Length > 0 Then _expectedItems = VbOcrInvoice.ToDecimal(result.ExpectedItemsTotal)
         _gridItems.DataSource = _invoice.Items
         FormatItemColumns()
         _empty.Visible = False
@@ -1081,15 +1084,15 @@ Public Class VbOcrScanForm
         _statQty.Text = qty.ToString("#,##0.##", india)
         _statAmount.Text = ChrW(&H20B9) & " " & amount.ToString("#,##0.00", india)
 
-        ' Printed total: tick when the items add up to it (also with 3/5/12/18/28 % GST added).
+        ' Printed total: tick when the items add up to it. The server works out what the items
+        ' should add up to when the total includes GST, freight or a discount.
         If _printedTotal < 0D Then
             _statPrinted.Text = "not found"
             _statPrinted.ForeColor = Muted
         Else
-            Dim matches As Boolean = False
-            For Each factor As Decimal In New Decimal() {1D, 1.05D, 1.12D, 1.18D, 1.28D, 1.03D}
-                If Math.Abs(amount * factor - _printedTotal) <= 1D Then matches = True
-            Next
+            Dim expected As Decimal = _printedTotal
+            If _expectedItems >= 0D Then expected = _expectedItems
+            Dim matches As Boolean = Math.Abs(amount - expected) <= Math.Max(1D, expected * 0.0002D)
             _statPrinted.Text = ChrW(&H20B9) & " " & _printedTotal.ToString("#,##0.00", india) & "  " & If(matches, ChrW(&H2713), ChrW(&H2717))
             _statPrinted.ForeColor = If(matches, Success, Danger)
         End If

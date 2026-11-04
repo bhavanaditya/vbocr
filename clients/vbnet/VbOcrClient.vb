@@ -67,6 +67,9 @@ Public Class VbOcrResult
     Public ItemsTotal As String = ""
     ''' <summary>Total printed on the invoice, as text. Empty when not found.</summary>
     Public PrintedTotal As String = ""
+    ''' <summary>What the items should add up to: the printed total less the GST, freight or
+    ''' discount lines found on the invoice. Empty when the total is the plain item sum.</summary>
+    Public ExpectedItemsTotal As String = ""
     ''' <summary>ID of this scan in the server's scan history (empty when history is off).</summary>
     Public ScanId As String = ""
     ''' <summary>"ocr" or "pdf-text" (read exactly from a digital PDF).</summary>
@@ -98,6 +101,7 @@ Public Class VbOcrResult
             TotalCheck = parts(0)
             If parts.Length > 1 Then ItemsTotal = parts(1)
             If parts.Length > 2 Then PrintedTotal = parts(2)
+            If parts.Length > 3 Then ExpectedItemsTotal = parts(3)
         End If
         Dim unsure As String = headers("X-VBOCR-Unsure")
         If unsure IsNot Nothing Then

@@ -13,8 +13,13 @@ echo Stopping a running VB OCR server...
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe' OR Name='python.exe'\" | Where-Object { $_.CommandLine -like '*vbocr serve*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }"
 
 if exist ".git" (
-    echo Downloading the newest version...
-    git pull --ff-only || goto :gitfailed
+    git symbolic-ref -q HEAD >nul 2>&1
+    if errorlevel 1 (
+        echo This folder is not on a branch ^(a fixed version is checked out^): files not updated.
+    ) else (
+        echo Downloading the newest version...
+        git pull --ff-only || goto :gitfailed
+    )
 ) else (
     echo This folder was not installed with git.
     echo Download the newest version from https://github.com/bhavanaditya/vbocr

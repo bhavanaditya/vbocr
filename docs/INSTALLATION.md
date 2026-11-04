@@ -33,6 +33,12 @@ After that, VB OCR works fully offline.
 
 ## 2. Install Python
 
+**You can skip this step:** when `install.bat` does not find Python, it offers to download
+Python 3.11 from python.org and install it for the current Windows user (no administrator rights
+needed). It checks that the download is signed by the Python Software Foundation before running it.
+
+To install Python yourself instead:
+
 1. Download **Windows installer (64-bit)** for Python 3.11 from <https://www.python.org/downloads/windows/>.
 2. Run it and, on the first screen, tick **"Add python.exe to PATH"**.
 3. Click **Install Now**.
@@ -72,7 +78,7 @@ install.bat
 
 The installer:
 
-1. finds Python 3.10–3.13
+1. finds Python 3.10–3.13 (64-bit), or offers to install Python 3.11
 2. creates a private Python environment in `C:\vbocr\.venv`, so your other Python programs are not affected
 3. installs PaddleOCR, PaddlePaddle, FastAPI, Uvicorn and PyYAML
 4. downloads the OCR models to `C:\vbocr\models`, so every Windows user on the PC can use them offline

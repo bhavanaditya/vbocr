@@ -100,3 +100,23 @@ def test_save_mkldnn_off_writes_local_settings(tmp_path):
     _save_mkldnn_off(path)  # running install twice must not break anything
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert data == {"server": {"api_key": "secret"}, "ocr": {"enable_mkldnn": False}}
+
+
+def test_upside_down_page_is_read_again_turned():
+    from vbocr.engine import OcrEngine, _mostly_upside_down
+
+    image = np.zeros((10, 20, 3), np.uint8)
+    image[0, 0] = 255
+    flipped = {"rec_texts": ["Grand Total", "5743.10", "x"], "rec_boxes": [], "rec_scores": [],
+               "textline_orientation_angles": [1, 1, 0], "input_img": image}
+    upright = dict(flipped, textline_orientation_angles=[0, 0, 1])
+    assert _mostly_upside_down(flipped) and not _mostly_upside_down(upright)
+
+    engine = OcrEngine.__new__(OcrEngine)
+    calls = []
+    engine._predict = lambda item, **options: calls.append((item, options)) or [upright]
+    assert engine._upright(upright) is upright and not calls
+    assert engine._upright(flipped) is upright
+    (turned, options), = calls
+    assert turned[9, 19].tolist() == [255, 255, 255]          # turned 180 degrees
+    assert options == {"use_doc_orientation_classify": False}
