@@ -67,21 +67,21 @@ jobs:
       - name: VB.NET build check (.NET 2.0 / VB 9 and .NET 4.5 / VB 15)
         run: dotnet build clients/vbnet/tests/BuildCheck
 
-      - name: Start the server with an access key
+      # One step: Windows runners stop processes started by a step when that step ends.
+      - name: VB.NET client against a server with an access key
         shell: pwsh
         run: |
           Add-Content config\settings.local.yaml "`nserver:`n  api_key: ci-key-123`n"
           Start-Process .venv\Scripts\python.exe -ArgumentList '-m','vbocr','serve','--port','5077' `
             -RedirectStandardError server.log -RedirectStandardOutput server.out.log -WindowStyle Hidden
-          for ($i = 0; $i -lt 90; $i++) {
-            try { if ((Invoke-RestMethod http://127.0.0.1:5077/health).status -eq 'ok') { exit 0 } } catch {}
-            Start-Sleep 2
+          $ready = $false
+          for ($i = 0; $i -lt 90 -and -not $ready; $i++) {
+            try { $ready = (Invoke-RestMethod http://127.0.0.1:5077/health).status -eq 'ok' } catch {}
+            if (-not $ready) { Start-Sleep 2 }
           }
-          Get-Content server.log -Tail 50
-          exit 1
-
-      - name: VB.NET client against the server
-        run: dotnet run --project clients/vbnet/tests/ClientTest -- http://127.0.0.1:5077 test-files ci-key-123
+          if (-not $ready) { Get-Content server.log -Tail 50; exit 1 }
+          dotnet run --project clients/vbnet/tests/ClientTest -- http://127.0.0.1:5077 test-files ci-key-123
+          if ($LASTEXITCODE -ne 0) { Get-Content server.log -Tail 50; exit 1 }
 
       - name: autostart-on.bat starts the server hidden (port 5000)
         shell: pwsh
