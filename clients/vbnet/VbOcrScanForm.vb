@@ -119,6 +119,7 @@ Public Class VbOcrScanForm
     Private ReadOnly _statAmount As New Label()
     Private ReadOnly _statPrinted As New Label()
     Private ReadOnly _results As New Panel()
+    Private ReadOnly _headerBox As New Panel()
     Private ReadOnly _empty As New Label()
     Private ReadOnly _gridHeader As New DataGridView()
     Private ReadOnly _gridItems As New DataGridView()
@@ -446,9 +447,10 @@ Public Class VbOcrScanForm
         _gridHeader.Columns(1).AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
         _gridHeader.Columns(1).DefaultCellStyle.Font = _fontBold
         Dim headerTitle As Label = SectionLabel("Invoice details  (click a value to correct it)")
-        Dim headerBox As New Panel()
+        Dim headerBox As Panel = _headerBox
         headerBox.Dock = DockStyle.Top
         headerBox.Height = 300
+        AddHandler _results.Resize, AddressOf ResultsResized
         Dim headerSide As New Panel()
         headerSide.Dock = DockStyle.Fill
         headerSide.BackColor = Surface2
@@ -506,6 +508,15 @@ Public Class VbOcrScanForm
         AddHandler _gridItems.UserDeletedRow, AddressOf ItemsDeleted
         Return outer
     End Function
+
+    ' The invoice details take at most 45 % of the height (they scroll when needed), so the item
+    ' table stays visible on small screens.
+    Private Sub ResultsResized(ByVal sender As Object, ByVal e As EventArgs)
+        Dim available As Integer = _results.ClientSize.Height
+        If available < 100 Then Return
+        Dim height As Integer = Math.Max(120, Math.Min(300, CInt(available * 0.45)))
+        If _headerBox.Height <> height Then _headerBox.Height = height
+    End Sub
 
     Private Function BuildFooter() As Control
         Dim bar As New Panel()

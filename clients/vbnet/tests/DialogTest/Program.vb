@@ -118,6 +118,8 @@ Module DialogTest
         CheckInside(dlg, ok, "OK button")
         Dim area As Rectangle = System.Windows.Forms.Screen.FromControl(dlg).WorkingArea
         Check("dialog fits on the screen, above the taskbar", area.Contains(dlg.Bounds), dlg.Bounds.ToString() & " in " & area.ToString())
+        Dim itemsGrid As DataGridView = Field(Of DataGridView)(dlg, "_gridItems")
+        Check("item table shows the rows", itemsGrid.DisplayedRowCount(False) >= 3, itemsGrid.DisplayedRowCount(False).ToString() & " rows visible")
         Check("OK button on the screen", area.Contains(ok.RectangleToScreen(ok.ClientRectangle)))
         Dim needed As Size = TextRenderer.MeasureText(status.Text, status.Font, New Size(status.Width, 0), TextFormatFlags.WordBreak Or TextFormatFlags.TextBoxControl)
         Check("status message fully visible", needed.Height <= status.Height OrElse status.Height >= 4 * status.Font.Height, needed.Height.ToString() & " > " & status.Height.ToString())
