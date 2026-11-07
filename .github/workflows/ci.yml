@@ -147,6 +147,41 @@ jobs:
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5088*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
           if (-not $ready) { throw "start-server.bat did not start the server" }
 
+      - name: File and folder names with spaces and Indian / accented letters
+        shell: pwsh
+        run: |
+          $dir = New-Item -ItemType Directory "uni ü बिल" -Force
+          Copy-Item test-files\a_bill.jpg (Join-Path $dir "बिल नंबर 1 ü.jpg")
+          Copy-Item test-files\digital-invoice.pdf (Join-Path $dir "रसीद ü 2.pdf")
+          # command line
+          cmd /c "scan.bat --each `"$dir`" < NUL"
+          $csv = Get-ChildItem $dir -Filter *.csv
+          $csv.Name
+          if ($csv.Count -ne 2) { throw "command line: expected 2 CSV files" }
+          # server, with a user temp folder that has such letters too (user name like Rāj)
+          $temp = New-Item -ItemType Directory "D:\temp Rāj बिल" -Force
+          $env:TEMP = $temp.FullName; $env:TMP = $temp.FullName
+          Start-Process .venv\Scripts\python.exe -ArgumentList '-m','vbocr','serve','--port','5099' -WindowStyle Hidden `
+            -RedirectStandardError uni-server.log -RedirectStandardOutput uni-server.out.log
+          $ready = $false
+          for ($i = 0; $i -lt 90 -and -not $ready; $i++) {
+            try { $ready = (Invoke-RestMethod http://127.0.0.1:5099/health).status -eq 'ok' } catch {}
+            if (-not $ready) { Start-Sleep 2 }
+          }
+          if (-not $ready) { Get-Content uni-server.log -Tail 40; throw "server did not start" }
+          foreach ($f in Get-ChildItem $dir -Exclude *.csv) {
+            $r = Invoke-WebRequest "http://127.0.0.1:5099/scan?format=json" -Method Post -Headers @{ 'X-API-Key' = 'ci-key-123' } `
+              -Form @{ files = $f }
+            $json = $r.Content | ConvertFrom-Json
+            "$($f.Name): $($json.items.Count) items, invoice $($json.header.invoice_number)"
+            if ($json.items.Count -lt 1) { Get-Content uni-server.log -Tail 40; throw "server: no items for $($f.Name)" }
+          }
+          $hist = Invoke-RestMethod "http://127.0.0.1:5099/history?limit=5" -Headers @{ 'X-API-Key' = 'ci-key-123' }
+          $hist.scans | ForEach-Object { $_.files -join ', ' }
+          if (-not ($hist.scans.files -match 'बिल')) { throw "history lost the file name" }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5099*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          if (Get-ChildItem $temp -Filter 'vbocr_*') { throw "temporary files left behind" }
+
       - name: autostart-on.bat starts the server hidden (port 5000)
         shell: pwsh
         run: |
@@ -186,9 +221,12 @@ jobs:
       VBOCR_YES: "1"
     steps:
       - uses: actions/checkout@v5
-      - name: install.bat with no Python on the PC
+      - name: install.bat with no Python on the PC, in a folder with spaces
         shell: pwsh
         run: |
+          # like C:\VERP ocr: install folder with spaces
+          Copy-Item . "D:\VB OCR test" -Recurse
+          Set-Location "D:\VB OCR test"
           $env:PATH = "C:\Windows\System32;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows\System32\Wbem"
           $hidden = (Get-Command py, python -ErrorAction SilentlyContinue)
           if ($hidden) { $hidden | Format-Table Name, Source; throw "a Python is still visible" }
