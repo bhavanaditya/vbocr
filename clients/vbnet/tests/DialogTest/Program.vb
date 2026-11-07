@@ -124,6 +124,20 @@ Module DialogTest
         Dim needed As Size = TextRenderer.MeasureText(status.Text, status.Font, New Size(status.Width, 0), TextFormatFlags.WordBreak Or TextFormatFlags.TextBoxControl)
         Check("status message fully visible", needed.Height <= status.Height OrElse status.Height >= 4 * status.Font.Height, needed.Height.ToString() & " > " & status.Height.ToString())
 
+        ' 1366 x 768 laptop at 125 % text size: about 1092 x 566 for an application that is not
+        ' DPI-aware (the usual WinForms project). Everything must still be usable.
+        dlg.MinimumSize = New Size(0, 0)
+        dlg.Size = New Size(1092, 566)
+        Pump(500)
+        Shot(dlg, "1b-small-screen")
+        Check("small screen: item rows visible", itemsGrid.DisplayedRowCount(False) >= 2, itemsGrid.DisplayedRowCount(False).ToString() & " rows")
+        CheckInside(dlg, ok, "small screen: OK button")
+        CheckInside(dlg, Field(Of Button)(dlg, "_btnScan"), "small screen: Scan button")
+        Dim pages As ListBox = Field(Of ListBox)(dlg, "_lstFiles")
+        Check("small screen: page list visible", pages.Height >= 40, pages.Height.ToString())
+        dlg.Size = New Size(1280, 800)
+        Pump(300)
+
         ' Recent scans window (normally modal; shown non-modal here so the test can look at it).
         Dim listType As Type = GetType(VbOcrScanForm).GetNestedType("RecentScansForm", BindingFlags.NonPublic)
         Dim client As New VbOcrClient(url)

@@ -120,6 +120,11 @@ Public Class VbOcrScanForm
     Private ReadOnly _statPrinted As New Label()
     Private ReadOnly _results As New Panel()
     Private ReadOnly _headerBox As New Panel()
+    Private ReadOnly _previewBox As New Panel()
+    Private ReadOnly _pagesCard As New Panel()
+    Private ReadOnly _stats As New TableLayoutPanel()
+    ' Short window (e.g. 1366 x 768 at 125 % text size): smaller tiles and details, no preview.
+    Private _compact As Boolean
     Private ReadOnly _empty As New Label()
     Private ReadOnly _gridHeader As New DataGridView()
     Private ReadOnly _gridItems As New DataGridView()
@@ -258,7 +263,8 @@ Public Class VbOcrScanForm
         outer.Width = 330
         outer.Padding = New Padding(14, 14, 7, 14)
 
-        Dim card As New Panel()
+        Dim card As Panel = _pagesCard
+        AddHandler card.Resize, AddressOf PagesResized
         card.Dock = DockStyle.Fill
         card.BackColor = Surface
         card.Padding = New Padding(14)
@@ -333,7 +339,7 @@ Public Class VbOcrScanForm
         SecondaryButton(_btnClear, "Clear", 58, listButtons)
 
         ' Preview of the selected page
-        Dim previewBox As New Panel()
+        Dim previewBox As Panel = _previewBox
         previewBox.Dock = DockStyle.Bottom
         previewBox.Height = 170
         previewBox.Padding = New Padding(0, 6, 0, 0)
@@ -413,7 +419,7 @@ Public Class VbOcrScanForm
         _banner.Controls.Add(progressHolder)
 
         ' Stat tiles
-        Dim stats As New TableLayoutPanel()
+        Dim stats As TableLayoutPanel = _stats
         stats.Dock = DockStyle.Top
         stats.Height = 86
         stats.Padding = New Padding(0, 12, 0, 6)
@@ -515,7 +521,31 @@ Public Class VbOcrScanForm
         Dim available As Integer = _results.ClientSize.Height
         If available < 100 Then Return
         Dim height As Integer = Math.Max(110, Math.Min(300, CInt(available * 0.35)))
+        If _compact Then height = Math.Max(66, CInt(available * 0.25))
         If _headerBox.Height <> height Then _headerBox.Height = height
+    End Sub
+
+    Protected Overrides Sub OnResize(ByVal e As EventArgs)
+        MyBase.OnResize(e)
+        Dim compact As Boolean = ClientSize.Height > 0 AndAlso ClientSize.Height < 640
+        If compact = _compact Then Return
+        _compact = compact
+        _stats.Height = If(compact, 70, 86)
+        _stats.Padding = If(compact, New Padding(0, 8, 0, 4), New Padding(0, 12, 0, 6))
+        FitBanner()
+        ResultsResized(Me, EventArgs.Empty)
+    End Sub
+
+    ' The page preview gives way to the page list when the window is short.
+    Private Sub PagesResized(ByVal sender As Object, ByVal e As EventArgs)
+        Dim others As Integer = 0
+        For Each control As Control In _pagesCard.Controls
+            If control IsNot _previewBox AndAlso control.Dock <> DockStyle.Fill Then others += control.Height
+        Next
+        Dim room As Integer = _pagesCard.ClientSize.Height - _pagesCard.Padding.Vertical - others - 80   ' 80: page list
+        Dim height As Integer = Math.Min(170, room)
+        _previewBox.Visible = height >= 90
+        If _previewBox.Visible AndAlso _previewBox.Height <> height Then _previewBox.Height = height
     End Sub
 
     Private Function BuildFooter() As Control
@@ -773,7 +803,7 @@ Public Class VbOcrScanForm
         Dim needed As Size = TextRenderer.MeasureText(_lblStatus.Text, _lblStatus.Font, New Size(width, 0), _
             TextFormatFlags.WordBreak Or TextFormatFlags.TextBoxControl)
         Dim lineHeight As Integer = _lblStatus.Font.Height
-        Dim height As Integer = Math.Max(44, Math.Min(needed.Height, lineHeight * 4) + 16)
+        Dim height As Integer = Math.Max(44, Math.Min(needed.Height, lineHeight * If(_compact, 2, 4)) + 16)
         If _banner.Height <> height Then _banner.Height = height
     End Sub
 
