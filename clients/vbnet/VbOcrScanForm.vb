@@ -509,12 +509,12 @@ Public Class VbOcrScanForm
         Return outer
     End Function
 
-    ' The invoice details take at most 45 % of the height (they scroll when needed), so the item
+    ' The invoice details take at most 35 % of the height (they scroll when needed), so the item
     ' table stays visible on small screens.
     Private Sub ResultsResized(ByVal sender As Object, ByVal e As EventArgs)
         Dim available As Integer = _results.ClientSize.Height
         If available < 100 Then Return
-        Dim height As Integer = Math.Max(120, Math.Min(300, CInt(available * 0.45)))
+        Dim height As Integer = Math.Max(110, Math.Min(300, CInt(available * 0.35)))
         If _headerBox.Height <> height Then _headerBox.Height = height
     End Sub
 
