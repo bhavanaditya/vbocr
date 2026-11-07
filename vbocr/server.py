@@ -27,6 +27,7 @@ import io
 import json
 import logging
 import os
+import re
 import tempfile
 import zipfile
 from contextlib import asynccontextmanager
@@ -54,6 +55,35 @@ UPLOAD_PAGE = (Path(__file__).with_name("upload.html")).read_text(encoding="utf-
 # CSV titles for the X-VBOCR-Unsure header (the VB.NET client works with CSV titles).
 FIELD_TITLES = dict(zip(HEADER_FIELDS, HEADER_TITLES))
 FIELD_TITLES.update(zip(ITEM_FIELDS, ITEM_TITLES[1:]))
+
+
+def upload_name(upload) -> str:
+    """The uploaded file's name, also when it has letters outside A-Z.
+
+    Browsers send such names as UTF-8. .NET programs (HttpClient, PowerShell) send
+    filename="=?utf-8?B?...?=" (an e-mail style encoding), and some clients add the standard
+    filename*=UTF-8''%E0%A4%AC... The VB.NET client sends a plain A-Z name plus filename*."""
+    from email.header import decode_header, make_header
+    from urllib.parse import unquote
+
+    name = upload.filename or ""
+    disposition = ""
+    try:
+        disposition = upload.headers.get("content-disposition", "") or ""
+    except AttributeError:
+        pass
+    star = re.search(r"filename\*\s*=\s*([\w-]+)'[^']*'([^;\s]+)", disposition, re.IGNORECASE)
+    if star:
+        try:
+            name = unquote(star.group(2).strip('"'), encoding=star.group(1), errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            pass
+    elif "=?" in name and "?=" in name:
+        try:
+            name = str(make_header(decode_header(name)))
+        except (ValueError, LookupError, UnicodeDecodeError):
+            pass
+    return re.split(r"[\\/]", name)[-1].strip()  # no folder part
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -105,16 +135,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         saved = []
         try:
             for upload in files:
-                suffix = Path(upload.filename or "").suffix.lower()
+                name = upload_name(upload)
+                suffix = Path(name).suffix.lower()
                 if suffix not in ALLOWED_EXTENSIONS:
-                    raise HTTPException(400, "Unsupported file type: {}".format(upload.filename))
+                    raise HTTPException(400, "Unsupported file type: {}".format(name))
                 data = await upload.read()
                 if len(data) > MAX_FILE_BYTES:
-                    raise HTTPException(413, "File too large: {}".format(upload.filename))
+                    raise HTTPException(413, "File too large: {}".format(name))
                 handle, path = tempfile.mkstemp(suffix=suffix, prefix="vbocr_")
                 with os.fdopen(handle, "wb") as out:
                     out.write(data)
-                saved.append((upload.filename or Path(path).name, path))
+                saved.append((name or Path(path).name, path))
 
             if mode == "each":
                 return await run_in_threadpool(_scan_each, engine, saved, format)

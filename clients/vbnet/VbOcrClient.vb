@@ -297,7 +297,8 @@ Public Class VbOcrClient
             End If
             Dim name As String = SentName(i, filePaths(i))
             WriteAscii(body, "--" & boundary & vbCrLf & _
-                "Content-Disposition: form-data; name=""files""; filename=""" & name & """" & vbCrLf & _
+                "Content-Disposition: form-data; name=""files""; filename=""" & name & """; filename*=UTF-8''" & _
+                Uri.EscapeDataString(Path.GetFileName(filePaths(i))) & vbCrLf & _
                 "Content-Type: application/octet-stream" & vbCrLf & vbCrLf)
             Dim bytes() As Byte = File.ReadAllBytes(filePaths(i))
             body.Write(bytes, 0, bytes.Length)

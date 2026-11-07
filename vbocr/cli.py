@@ -84,6 +84,7 @@ def main(argv=None) -> int:
     diag.add_argument("-o", "--output", help="Zip file or folder (default: the logs folder)")
 
     args = parser.parse_args(argv)
+    _utf8_when_redirected()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     try:
@@ -265,6 +266,17 @@ def _save_mkldnn_off(path: Path) -> None:
     text += yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")
     print("This PC's CPU needs oneDNN switched off; saved enable_mkldnn: false in {}".format(path), file=sys.stderr)
+
+
+def _utf8_when_redirected() -> None:
+    """Output to a file or another program is UTF-8 (CSV with Hindi / accented text, file
+    names). A real console window keeps showing Unicode as it does by itself."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None and not stream.isatty() and hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
 
 
 def _log_to_file_without_console() -> None:
