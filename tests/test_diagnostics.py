@@ -68,7 +68,7 @@ def test_large_log_keeps_only_the_end(tmp_path, monkeypatch):
     monkeypatch.setattr(diagnostics, "MAX_LOG_BYTES", 100)
     logs = tmp_path / "logs"
     logs.mkdir()
-    (logs / "server.log").write_text("x" * 1000 + "LAST LINE\n", encoding="utf-8")
+    (logs / "server.log").write_bytes(b"x" * 1000 + b"LAST LINE\n")  # bytes: same on Windows
     archive = zipfile.ZipFile(io.BytesIO(diagnostics.build(_settings(tmp_path), logs)))
     text = archive.read("logs/server.log").decode("utf-8")
     assert text.startswith("... (start cut off)") and text.endswith("LAST LINE\n") and len(text) < 200
