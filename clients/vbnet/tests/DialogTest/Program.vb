@@ -91,8 +91,6 @@ Module DialogTest
         dlg.ApiKey = key
         dlg.InstallFolder = Path.GetFullPath(".")
         dlg.FilesToScan = New String() {Path.Combine(dir, "a_bill.jpg")}
-        dlg.StartPosition = FormStartPosition.Manual
-        dlg.Location = New Point(0, 0)
         dlg.Show()
 
         Dim ok As Button = Field(Of Button)(dlg, "_btnOk")
@@ -118,6 +116,11 @@ Module DialogTest
         CheckInside(dlg, recent, "'Recent scans' button")
         CheckInside(dlg, earlier, "'Earlier scans' button")
         CheckInside(dlg, ok, "OK button")
+        Dim area As Rectangle = System.Windows.Forms.Screen.FromControl(dlg).WorkingArea
+        Check("dialog fits on the screen, above the taskbar", area.Contains(dlg.Bounds), dlg.Bounds.ToString() & " in " & area.ToString())
+        Check("OK button on the screen", area.Contains(ok.RectangleToScreen(ok.ClientRectangle)))
+        Dim needed As Size = TextRenderer.MeasureText(status.Text, status.Font, New Size(status.Width, 0), TextFormatFlags.WordBreak Or TextFormatFlags.TextBoxControl)
+        Check("status message fully visible", needed.Height <= status.Height OrElse status.Height >= 4 * status.Font.Height, needed.Height.ToString() & " > " & status.Height.ToString())
 
         ' Recent scans window (normally modal; shown non-modal here so the test can look at it).
         Dim listType As Type = GetType(VbOcrScanForm).GetNestedType("RecentScansForm", BindingFlags.NonPublic)

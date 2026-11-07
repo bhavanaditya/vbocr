@@ -396,6 +396,7 @@ Public Class VbOcrScanForm
         _lblStatus.Dock = DockStyle.Fill
         _lblStatus.TextAlign = ContentAlignment.MiddleLeft
         _lblStatus.AutoEllipsis = True
+        AddHandler _lblStatus.SizeChanged, AddressOf BannerResized
         _progress.Dock = DockStyle.Right
         _progress.Width = 160
         _progress.Style = ProgressBarStyle.Marquee
@@ -748,10 +749,42 @@ Public Class VbOcrScanForm
         _lblStatus.ForeColor = fore
         _lblStatus.Font = If(kind = Tone.Info, _fontBase, _fontBold)
         _lblStatus.Text = message
+        _tip.SetToolTip(_lblStatus, message)
         _progress.Visible = (kind = Tone.Busy)
+        FitBanner()
+    End Sub
+
+    ' The status bar grows to show long messages (up to four lines); the full text is also
+    ' in its tooltip.
+    Private Sub FitBanner()
+        Dim width As Integer = _lblStatus.Width
+        If width < 50 Then Return
+        Dim needed As Size = TextRenderer.MeasureText(_lblStatus.Text, _lblStatus.Font, New Size(width, 0), _
+            TextFormatFlags.WordBreak Or TextFormatFlags.TextBoxControl)
+        Dim lineHeight As Integer = _lblStatus.Font.Height
+        Dim height As Integer = Math.Max(44, Math.Min(needed.Height, lineHeight * 4) + 16)
+        If _banner.Height <> height Then _banner.Height = height
+    End Sub
+
+    Private Sub BannerResized(ByVal sender As Object, ByVal e As EventArgs)
+        FitBanner()
     End Sub
 
     ' ------------------------------------------------------------------ form events
+
+    ' Small screens (1366 x 768 laptops, 125 % text size): keep the whole dialog, including the
+    ' buttons at the bottom, above the taskbar.
+    Protected Overrides Sub OnLoad(ByVal e As EventArgs)
+        MyBase.OnLoad(e)
+        Dim area As Rectangle = Screen.FromControl(Me).WorkingArea
+        If Owner IsNot Nothing Then area = Screen.FromControl(Owner).WorkingArea
+        MinimumSize = New Size(Math.Min(MinimumSize.Width, area.Width), Math.Min(MinimumSize.Height, area.Height))
+        If Width > area.Width OrElse Height > area.Height Then
+            Size = New Size(Math.Min(Width, area.Width), Math.Min(Height, area.Height))
+        End If
+        Location = New Point(Math.Max(area.Left, Math.Min(Left, area.Right - Width)), _
+                             Math.Max(area.Top, Math.Min(Top, area.Bottom - Height)))
+    End Sub
 
     Protected Overrides Sub OnShown(ByVal e As EventArgs)
         MyBase.OnShown(e)
