@@ -176,3 +176,29 @@ jobs:
           if (Test-Path server.log) { Get-Content server.log -Tail 80 }
           if (Test-Path logs\server.log) { Get-Content logs\server.log -Tail 40 }
           if (Test-Path logs\last-error.txt) { Get-Content logs\last-error.txt }
+
+  # A PC without Python: install.bat must download Python 3.11 from python.org, check its
+  # signature, install it for the user and carry on. Every other Python is hidden from it.
+  windows-no-python:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      VBOCR_YES: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - name: install.bat with no Python on the PC
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Windows\System32;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows\System32\Wbem"
+          $hidden = (Get-Command py, python -ErrorAction SilentlyContinue)
+          if ($hidden) { $hidden | Format-Table Name, Source; throw "a Python is still visible" }
+          cmd /c "install.bat < NUL"
+          if ($LASTEXITCODE -ne 0) { throw "install.bat failed ($LASTEXITCODE)" }
+          $base = .venv\Scripts\python.exe -c "import sys; print(sys.base_prefix)"
+          "venv made from: $base"
+          if ($base -notlike "*\Programs\Python\Python311*") { throw "the venv does not use the downloaded Python" }
+          .venv\Scripts\python.exe -m vbocr --version
+          # running install.bat again uses the Python installed the first time (no new download)
+          $again = cmd /c "install.bat < NUL"
+          if ($again -match 'Downloading https://www.python.org') { throw "downloaded Python a second time" }
+          if ($LASTEXITCODE -ne 0) { throw "second install.bat failed" }
