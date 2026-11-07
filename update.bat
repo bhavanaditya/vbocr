@@ -2,6 +2,8 @@
 rem Update VB OCR to the newest version. Your settings (config\settings.local.yaml),
 rem item list (config\item_master.csv) and scan history (history\) are kept.
 setlocal
+rem Started from PowerShell 7: keep its module path away from Windows PowerShell below.
+set "PSModulePath="
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" (
     echo VB OCR is not installed. Run install.bat first.

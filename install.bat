@@ -4,6 +4,9 @@ rem Needs an internet connection. Python 3.10 - 3.13 (64-bit) is used when insta
 rem otherwise Python 3.11 is downloaded from python.org (after asking).
 setlocal
 cd /d "%~dp0"
+rem Started from PowerShell 7 (e.g. Windows Terminal): its module path would stop the
+rem Windows PowerShell used below from loading its own modules (signature check).
+set "PSModulePath="
 
 set "PY="
 for %%V in (3.11 3.12 3.13 3.10) do (
