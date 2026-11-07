@@ -99,13 +99,19 @@ def _read(path: Path) -> Dict[str, List[Dict[str, str]]]:
     return index
 
 
-def lookup(index: Dict[str, List[Dict[str, str]]], sku: str, supplier_name: str) -> Optional[Dict[str, str]]:
+def lookup(
+    index: Dict[str, List[Dict[str, str]]], sku: str, supplier_name: str, supplier_gstin: str = ""
+) -> Optional[Dict[str, str]]:
+    """The row for this SKU: one for this supplier (by name, or by GSTIN), else a general one."""
     rows = index.get(sku_key(sku))
     if not rows:
         return None
     supplier = (supplier_name or "").lower()
+    gstin = (supplier_gstin or "").lower()
     for row in rows:
         wanted = row.get("supplier", "").lower()
+        if wanted and gstin and wanted == gstin:
+            return row
         if wanted and supplier and (wanted in supplier or supplier in wanted):
             return row
     general = [r for r in rows if not r.get("supplier")]
@@ -125,7 +131,8 @@ def _same(field: str, a: str, b: str) -> bool:
 
 
 def apply(
-    items: List[Dict[str, str]], paths: Iterable[Path], supplier_name: str, overwrite: bool
+    items: List[Dict[str, str]], paths: Iterable[Path], supplier_name: str, overwrite: bool,
+    supplier_gstin: str = "",
 ) -> Tuple[int, List[Tuple[int, str]]]:
     """Fill item values from the item list(s), first file first.
 
@@ -138,7 +145,7 @@ def apply(
         if not index:
             continue
         for position, item in enumerate(items):
-            row = lookup(index, item.get("sku", ""), supplier_name)
+            row = lookup(index, item.get("sku", ""), supplier_name, supplier_gstin)
             if row is None:
                 continue
             found.add(position)
@@ -157,9 +164,10 @@ def apply(
 _learn_lock = threading.Lock()
 
 
-def learn(path: Path, supplier_name: str, original: List[Dict[str, str]], items: List[Dict[str, str]]) -> int:
+def learn(path: Path, supplier: str, original: List[Dict[str, str]], items: List[Dict[str, str]]) -> int:
     """Remember item values the user typed or corrected (by SKU and supplier), so the next
-    invoice with that SKU gets them filled in. Returns the number of values learned."""
+    invoice with that SKU gets them filled in. ``supplier`` is the supplier's GSTIN when known
+    (exact), else the supplier name as read from the invoice. Returns the number of values learned."""
     from .history import match_rows
 
     learned: Dict[str, Dict[str, str]] = {}
@@ -180,7 +188,7 @@ def learn(path: Path, supplier_name: str, original: List[Dict[str, str]], items:
         if path.is_file():
             for entries in _read(path).values():
                 rows.extend(entries)
-        supplier = (supplier_name or "").strip()
+        supplier = (supplier or "").strip()
         count = 0
         for key, values in learned.items():
             target = next((r for r in rows if sku_key(r.get("sku", "")) == key

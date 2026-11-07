@@ -68,7 +68,20 @@ class Settings:
     def output(self) -> Dict[str, Any]:
         return self.data.get("output") or {}
 
-    def match_supplier(self, text: str) -> Optional[Dict[str, Any]]:
+    @property
+    def own_gstins(self) -> List[str]:
+        """Your own GSTIN(s): never taken as the supplier's."""
+        value = (self.data.get("company") or {}).get("gstin") or []
+        return [str(v) for v in (value if isinstance(value, list) else [value]) if v]
+
+    def match_supplier(self, text: str, gstin: str = "") -> Optional[Dict[str, Any]]:
+        """The supplier profile: by GSTIN first (exact), then by the match texts."""
+        if gstin:
+            for supplier in self.suppliers:
+                listed = supplier.get("gstin") or []
+                listed = listed if isinstance(listed, list) else [listed]
+                if any(str(g).upper().replace(" ", "") == gstin for g in listed):
+                    return supplier
         lowered = text.lower()
         for supplier in self.suppliers:
             if any(str(key).lower() in lowered for key in supplier.get("match") or []):

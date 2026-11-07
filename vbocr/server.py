@@ -9,14 +9,19 @@
     POST /csv               JSON invoice (header + items, e.g. corrected in the browser) -> CSV.
                             With "scan_id", the corrections are also saved in the history.
     GET  /history           recent scans, newest first. ?limit=50&q=<supplier / invoice no>
+    GET  /history.csv       the same list as CSV (for the VB.NET client)
     GET  /history/{id}      one saved scan (JSON)
     GET  /history/{id}.csv  its CSV
     GET  /stats             what users corrected (per supplier and column). ?days=90
+    GET  /network           addresses other devices (a phone) can use to open this page
+    POST /qr                {"text": ...} -> QR code (SVG), for opening the page on a phone
+    GET  /diagnostics       zip with logs, settings (keys removed) and versions; no invoices
 
 When server.api_key is set, every request except / and /health needs the key in the
 "X-API-Key" header (or ?key=...).
 """
 
+import csv
 import hmac
 import io
 import json
@@ -146,12 +151,42 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             if original is not None and master.get("learn", True) and master.get("learned_file"):
                 learned = item_master.learn(
                     settings.resolve(master["learned_file"]),
-                    invoice.header.get("supplier_name") or (original.get("header") or {}).get("supplier_name", ""),
+                    # file it under what the next scan will read: the GSTIN, or the name as read
+                    original.get("supplier_gstin") or (original.get("header") or {}).get("supplier_name", "")
+                    or invoice.header.get("supplier_name", ""),
                     original.get("items") or [],
                     invoice.items,
                 )
                 headers["X-VBOCR-Learned"] = str(learned)
         return Response(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
+
+    @app.get("/network", dependencies=[Depends(require_key)])
+    def network(request: Request) -> dict:
+        host = str(settings.server.get("host", "127.0.0.1"))
+        port = request.url.port or int(settings.server.get("port", 5000))
+        shared = host not in ("127.0.0.1", "localhost", "::1")
+        urls = ["http://{}:{}/".format(ip, port) for ip in lan_addresses()] if shared else []
+        return {"shared": shared, "urls": urls, "port": port, "key_required": bool(api_key),
+                "settings_file": str(settings.local_settings_path)}
+
+    @app.post("/qr", dependencies=[Depends(require_key)])
+    def qr(data: dict = Body(...)) -> Response:
+        # POST, so a key in the text never ends up in the server log
+        import segno
+
+        text = str(data.get("text") or "")[:500]
+        if not text:
+            raise HTTPException(400, "text is empty")
+        buffer = io.BytesIO()
+        segno.make(text, error="m").save(buffer, kind="svg", scale=6, border=2, dark="#111827", light="#ffffff")
+        return Response(buffer.getvalue(), media_type="image/svg+xml")
+
+    @app.get("/diagnostics", dependencies=[Depends(require_key)])
+    def diagnostics_zip() -> Response:
+        from . import diagnostics
+
+        return Response(diagnostics.build(settings), media_type="application/zip", headers={
+            "Content-Disposition": 'attachment; filename="{}"'.format(diagnostics.file_name())})
 
     @app.get("/stats", dependencies=[Depends(require_key)])
     def stats(days: int = Query(90, ge=1, le=3650)) -> dict:
@@ -168,6 +203,19 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if engine.history is None:
             return {"enabled": False, "scans": []}
         return {"enabled": True, "scans": engine.history.recent(limit, q)}
+
+    @app.get("/history.csv", dependencies=[Depends(require_key)])
+    def history_list_csv(limit: int = Query(50, ge=1, le=500), q: str = "") -> Response:
+        engine = scanner()
+        scans = engine.history.recent(limit, q) if engine.history is not None else []
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\r\n")
+        columns = ["id", "scanned", "supplier_name", "supplier_gstin", "invoice_number", "invoice_date",
+                   "items", "amount", "warnings", "corrected"]
+        writer.writerow(columns)
+        for scan in scans:
+            writer.writerow([scan.get(c, "") for c in columns])
+        return Response(buffer.getvalue(), media_type="text/csv; charset=utf-8")
 
     @app.get("/history/{scan_id}.csv", dependencies=[Depends(require_key)])
     def history_csv(scan_id: str) -> Response:
@@ -202,11 +250,46 @@ def result_headers(invoice: Invoice) -> dict:
         headers["X-VBOCR-Total-Check"] = "{}|{}|{}|{}".format(
             check.get("status"), check.get("items_total", ""), check.get("printed_total", ""),
             check.get("expected_items_total", ""))
+    if check.get("note"):
+        headers["X-VBOCR-Total-Note"] = _latin1(str(check["note"]))
     if invoice.scan_id:
         headers["X-VBOCR-Scan-Id"] = invoice.scan_id
+    if invoice.duplicates:
+        # earlier scans of the same invoice: "id|scanned;id|scanned"
+        headers["X-VBOCR-Duplicates"] = ";".join(
+            "{}|{}".format(d.get("id", ""), d.get("scanned", "")) for d in invoice.duplicates[:10])
     if invoice.source:
         headers["X-VBOCR-Source"] = invoice.source
+    if invoice.supplier_gstin:
+        headers["X-VBOCR-Supplier-GSTIN"] = invoice.supplier_gstin
     return headers
+
+
+def lan_addresses() -> List[str]:
+    """This PC's addresses on the office network (192.168.x.x, 10.x.x.x, 172.16-31.x.x)."""
+    import ipaddress
+    import socket
+
+    found = []
+    try:  # the address used to reach other networks; nothing is actually sent
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 1))
+            found.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        found += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    result = []
+    for address in found:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if ip.is_private and not ip.is_loopback and not ip.is_link_local and address not in result:
+            result.append(address)
+    return result
 
 
 def _history_item(engine: Scanner, scan_id: str) -> dict:

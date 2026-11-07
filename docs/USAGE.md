@@ -74,6 +74,26 @@ When the same supplier and invoice number was scanned before, the result says
 When the server has an access key (see [CONFIGURATION.md](CONFIGURATION.md#server)), the page asks
 for it once and remembers it in this browser.
 
+The result shows the **supplier's GSTIN** when it is printed on the invoice. It is checked with its
+check character, so a misread GSTIN is reported ("fails its check character") instead of used.
+When both scans have a GSTIN, "Already scanned" compares the GSTIN instead of the supplier name.
+
+**Diagnostics** (top right) downloads a zip with the log files, the settings (access keys removed)
+and the program versions. Send it when asking for help. It contains no invoices.
+
+### Scan with a phone
+
+Click **Phone** (top right). The page shows a QR code: point the phone camera at it and tap the
+link. The phone opens the same page; tap **Camera**, photograph each page and tap **Scan**.
+The result also appears on the PC under **Recent scans**.
+
+- The phone must be on the same Wi-Fi as the PC.
+- The server must accept other devices: `host: 0.0.0.0` in `config\settings.local.yaml` (see
+  [INSTALLATION.md](INSTALLATION.md#network-use)). Until then, **Phone** explains what to change.
+- With an access key, the QR code carries the key, so the phone does not ask for it. The key is
+  stored on the phone and removed from the address bar. Anyone who sees the QR code can use the
+  key, so do not share a photo of it.
+
 The status in the top right shows whether the server is **Ready**, still **Loading** the OCR
 engine, or **offline**. The page follows the Windows light / dark setting.
 
@@ -160,6 +180,7 @@ scans also appear under **Recent scans**. To watch while the server runs (no ext
 .venv\Scripts\python.exe -m vbocr add-sample FILES... [--name NAME]    rem test bench, see DEVELOPMENT.md
 .venv\Scripts\python.exe -m vbocr check-samples                        rem test bench
 .venv\Scripts\python.exe -m vbocr setup                               rem download models
+.venv\Scripts\python.exe -m vbocr diagnostics [-o FILE.zip]            rem zip for asking for help
 .venv\Scripts\python.exe -m vbocr --version
 ```
 
@@ -176,7 +197,7 @@ Shows whether the server is ready. `status` is `loading` while the OCR engine st
 requests then answer `503`.
 
 ```json
-{"status": "ok", "version": "1.1.0", "key_required": false, "check_updates": true}
+{"status": "ok", "version": "1.2.0", "key_required": false, "check_updates": true}
 ```
 
 ### `POST /scan`
@@ -214,8 +235,11 @@ file that failed, and `summary.json`. The headers below are only sent in `pages`
 | `X-VBOCR-Warnings` | Problems found, separated by ` \| `. Only present when there are warnings |
 | `X-VBOCR-Unsure` | Values the OCR was not sure about, separated by `;`. `Invoice Number` = a header value, `3:Quantity` = the quantity of item 3 |
 | `X-VBOCR-Total-Check` | `status\|items total\|printed total\|expected items total`, e.g. `mismatch\|4741.10\|5743.10\|`. Status: `ok`, `mismatch`, `not_found`, `no_items`. The last part is set when the printed total includes GST, freight or a discount: what the items should add up to |
+| `X-VBOCR-Total-Note` | Why the items do not add up to the printed total, e.g. which GST, freight or discount lines were found. Only present when there is a note |
 | `X-VBOCR-Scan-Id` | ID of the scan in the history (when history is on) |
+| `X-VBOCR-Duplicates` | Earlier scans of the same invoice: `id\|scanned` entries separated by `;`. Only present when there are any |
 | `X-VBOCR-Source` | `ocr`, or `pdf-text` when every page was read from a digital PDF's text |
+| `X-VBOCR-Supplier-GSTIN` | The supplier's GSTIN (passes its check character). Only present when found |
 
 **Status codes**
 
@@ -274,6 +298,7 @@ curl -F "files=@bill1.jpg" -F "files=@bill2.png" "http://127.0.0.1:5000/scan?mod
   "scan_id": "20260131-101502-123-SG-25-26-0042",
   "duplicates": [],
   "source": "ocr",
+  "supplier_gstin": "29AAGCS1234K1Z7",
   "csv": ",Date,Supplier Name,..."
 }
 ```
@@ -281,7 +306,8 @@ curl -F "files=@bill1.jpg" -F "files=@bill2.png" "http://127.0.0.1:5000/scan?mod
 `supplier_profile` is the name of the matching profile in `config/suppliers.yaml`, or empty when the
 supplier is unknown. `csv` is the same text that `format=csv` returns. All values are strings. Numbers have thousands separators removed.
 In `unsure`, row `0` is a header value and `1` the first item. `duplicates` lists earlier scans of
-the same supplier and invoice number (`id`, `scanned`).
+the same supplier and invoice number (`id`, `scanned`). `supplier_gstin` is the supplier's GSTIN
+(empty when none is printed, or when it fails its check character: then `warnings` says so).
 
 ### `POST /csv`
 
@@ -309,7 +335,24 @@ Recent scans, newest first: `{"enabled": true, "scans": [{"id", "scanned", "supp
 "invoice_number", "invoice_date", "items", "amount", "warnings", "files", "corrected"}, ...]}`.
 Query `limit` (default 50, max 500) and `q` (search supplier, invoice number, file name).
 
+`GET /history.csv` returns the same list as CSV (columns `id, scanned, supplier_name,
+supplier_gstin, invoice_number, invoice_date, items, amount, warnings, corrected`). The VB.NET
+client uses it.
+
 `GET /history/{id}` returns one saved scan (the JSON above plus `files`, `scanned`, `csv`), and
 `GET /history/{id}.csv` its CSV.
+
+### `GET /network` and `POST /qr`
+
+`/network` returns `{"shared", "urls", "port", "key_required", "settings_file"}`. `shared` is false
+while the server only accepts this PC (`host: 127.0.0.1`), and `urls` lists the addresses other
+devices can use. `POST /qr` with `{"text": "..."}` returns that text as a QR code (SVG). The browser
+**Phone** window uses both.
+
+### `GET /diagnostics`
+
+A zip with `summary.json` (versions, platform, number of saved scans), `config/` (settings with
+keys, passwords and tokens removed, and `suppliers.yaml`) and `logs/`. No invoices, history or
+item list. The same zip as `python -m vbocr diagnostics`.
 
 Interactive API documentation is available at <http://127.0.0.1:5000/docs> while the server is running.

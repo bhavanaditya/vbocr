@@ -168,6 +168,9 @@ tr:hover .rowdel{opacity:1}
 .modal h3{margin:0 0 6px}.modal p{margin:0 0 14px;color:var(--muted)}
 .modal input{width:100%;padding:10px 12px;border:1px solid var(--border-strong);border-radius:8px;margin-bottom:14px;background:var(--surface)}
 .modal .btnrow{justify-content:flex-end}
+.modal .card.phone{width:min(460px,100%)}
+.modal img.qr{display:block;width:220px;height:220px;margin:6px auto 10px;border-radius:8px;background:#fff}
+.modal ol.steps{margin:0 0 10px 18px;padding:0;color:var(--text-2);font-size:13.5px}.modal ol.steps li{margin:4px 0;overflow-wrap:anywhere}
 
 /* Toasts */
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:20}
@@ -182,8 +185,10 @@ tr:hover .rowdel{opacity:1}
   <div class="logo">VB</div>
   <div class="brand"><b>VB OCR</b><span>Supplier invoice → purchase-entry CSV</span></div>
   <div class="spacer"></div>
+  <button id="openPhone" class="btn small" type="button" title="Take invoice photos with a phone"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>Phone</button>
   <button id="openHistory" class="btn small" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>Recent scans</button>
   <a class="toplink" href="/docs" target="_blank" rel="noopener">API</a>
+  <a id="diagLink" class="toplink" href="#" title="Download logs, settings (access keys removed) and versions, to send when asking for help. No invoices.">Diagnostics</a>
   <span id="update" class="pill update hidden"></span>
   <span id="health" class="pill loading"><span class="dot"></span><span id="healthText">Connecting…</span></span>
 </header>
@@ -245,6 +250,14 @@ tr:hover .rowdel{opacity:1}
   </form>
 </div>
 
+<div id="phoneModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="phoneTitle">
+  <div class="card phone">
+    <h3 id="phoneTitle">Scan with a phone</h3>
+    <div id="phoneBody"></div>
+    <div class="btnrow"><button type="button" class="btn" id="phoneClose">Close</button></div>
+  </div>
+</div>
+
 <script>
 const EXT = /\.(jpe?g|jpe|jfif|png|bmp|tiff?|webp|gif|pdf)$/i;
 const PREVIEWABLE = /\.(jpe?g|jpe|jfif|png|bmp|webp|gif)$/i;
@@ -263,6 +276,16 @@ let pages = [];      // {file, url}
 let mode = 'pages';
 let lastResults = [];
 let keyRequired = false;
+
+/* Opened from the phone QR code: the key comes in the #fragment (never sent to the server).
+   Remember it and remove it from the address bar. */
+(function keyFromLink() {
+  const m = location.hash.match(/(?:^#|&)key=([^&]+)/);
+  if (m) {
+    localStorage.setItem('vbocrKey', decodeURIComponent(m[1]));
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+})();
 
 /* ---------- requests (adds the access key when the server needs one) ---------- */
 let keyWaiters = null;
@@ -496,6 +519,7 @@ function invoiceCard(inv, index, seconds) {
   const supplier = inv.header && inv.header.supplier_name;
   title.appendChild(el('b', null, supplier || inv.file || 'Invoice'));
   const info = [inv.file || (inv.files || []).join(' + ')];
+  if (inv.supplier_gstin) info.push('GSTIN ' + inv.supplier_gstin);
   if (inv.scanned) info.push('scanned ' + inv.scanned);
   if (seconds && index === 0 && lastResults.length === 1) info.push('read in ' + Math.round(seconds) + ' s');
   if (String(inv.source || '').includes('pdf-text')) info.push('read from the PDF text (exact)');
@@ -672,6 +696,59 @@ async function currentCsv(inv) {
   return inv.csv;
 }
 
+/* ---------- scan with a phone: QR code with this page's network address ---------- */
+$('openPhone').onclick = showPhone;
+$('diagLink').onclick = async e => {
+  e.preventDefault();
+  try {
+    const r = await api('/diagnostics');
+    if (!r.ok) throw new Error(await errorText(r));
+    const name = ((r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'vbocr-diagnostics.zip';
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('Diagnostics saved: ' + name + ' (no invoices in it)');
+  } catch (err) { toast(err.message, true); }
+};
+$('phoneClose').onclick = () => $('phoneModal').classList.add('hidden');
+document.addEventListener('keydown', e => {   // Escape closes an open window (not the access key prompt)
+  if (e.key === 'Escape') document.querySelectorAll('.modal:not(.hidden):not(#keyModal)').forEach(m => m.classList.add('hidden'));
+});
+$('phoneModal').onclick = e => { if (e.target === $('phoneModal')) $('phoneModal').classList.add('hidden'); };
+async function showPhone() {
+  const body = $('phoneBody'); body.innerHTML = '';
+  body.appendChild(el('p', null, 'Loading…'));
+  $('phoneModal').classList.remove('hidden');
+  try {
+    const r = await api('/network');
+    if (!r.ok) throw new Error(await errorText(r));
+    const d = await r.json();
+    body.innerHTML = '';
+    if (!d.shared || !d.urls.length) {
+      body.appendChild(el('p', null, 'The server only accepts this PC now. To scan with a phone on the office Wi-Fi:'));
+      const ol = el('ol', 'steps');
+      [`Add to ${d.settings_file}:   server: {host: 0.0.0.0, api_key: "a-long-secret"}`,
+       'Allow port ' + d.port + ' in Windows Firewall (see INSTALLATION.md, "Network use").',
+       'Restart the server, then click Phone again.'].forEach(t => ol.appendChild(el('li', null, t)));
+      body.appendChild(ol);
+      return;
+    }
+    const key = localStorage.getItem('vbocrKey') || '';
+    const link = d.urls[0] + (d.key_required && key ? '#key=' + encodeURIComponent(key) : '');
+    const q = await api('/qr', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text: link})});
+    if (!q.ok) throw new Error(await errorText(q));
+    const img = el('img', 'qr'); img.alt = 'QR code: ' + d.urls[0];
+    img.src = URL.createObjectURL(new Blob([await q.text()], {type: 'image/svg+xml'}));
+    body.appendChild(img);
+    const ol = el('ol', 'steps');
+    ['Connect the phone to the same Wi-Fi as this PC.',
+     'Open the phone camera and point it at the code. Tap the link.',
+     'Tap Camera, photograph each page, then Scan. Results also appear here under Recent scans.'].forEach(t => ol.appendChild(el('li', null, t)));
+    body.appendChild(ol);
+    body.appendChild(el('p', 'hint', 'Or type ' + d.urls.join('  or  ') + (d.key_required ? ' and enter the access key.' : '')));
+  } catch (e) { body.innerHTML = ''; body.appendChild(el('p', null, e.message)); }
+}
+
 /* ---------- recent scans ---------- */
 let historyQuery = '', historyTimer = null;
 $('openHistory').onclick = () => showHistory();
@@ -700,7 +777,7 @@ async function showHistory() {
         const row = el('div', 'hrow'); row.tabIndex = 0; row.setAttribute('role', 'button');
         row.append(el('b', null, (s.supplier_name || s.files.join(', ') || 'Invoice') + (s.invoice_number ? ' · ' + s.invoice_number : '')),
           el('span', 'amt', s.amount ? '₹ ' + money(num(s.amount)) : ''),
-          el('small', null, 'Scanned ' + s.scanned + (s.invoice_date ? ' · invoice date ' + s.invoice_date : '') + ' · ' + s.items + ' items' + (s.corrected ? ' · corrected' : '')),
+          el('small', null, 'Scanned ' + s.scanned + (s.supplier_gstin ? ' · GSTIN ' + s.supplier_gstin : '') + (s.invoice_date ? ' · invoice date ' + s.invoice_date : '') + ' · ' + s.items + ' items' + (s.corrected ? ' · corrected' : '')),
           el('small', null, s.warnings ? s.warnings + ' to check' : ''));
         row.onclick = () => openScan(s.id);
         row.onkeydown = e => { if (e.key === 'Enter') openScan(s.id); };

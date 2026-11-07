@@ -50,6 +50,21 @@ With `api_key` set, scans, the history and `/csv` need the key: the browser page
 the VB.NET client sends `VbOcrClient.ApiKey`, curl sends `-H "X-API-Key: ..."`. The server prints a
 warning when it is open to other PCs without a key.
 
+## `company`
+
+```yaml
+company:
+  gstin: ["29ABCDE1234F1Z5"]   # your own GSTIN(s); several for several branches
+```
+
+An invoice usually shows two GSTINs: the supplier's and yours (under "Bill to" / "Buyer").
+VB OCR never takes a GSTIN listed here as the supplier's. Without it, the buyer's GSTIN is still
+recognised by labels like "Bill to", "Buyer" or "Consignee"; listing yours makes it certain.
+
+The supplier's GSTIN is used to pick the supplier profile (`gstin:` in `suppliers.yaml`), to
+find earlier scans of the same invoice, and for the learned item values (see
+[`item_master`](#item_master)).
+
 ## `ocr`
 
 These options are passed directly to PaddleOCR.
@@ -271,6 +286,9 @@ automatically when it changes.
 clicks **Save corrections**, the value is remembered per SKU and supplier in
 `config\item_master.learned.csv` (same layout, you can edit or delete it). The next invoice with
 that SKU gets empty columns filled from it. Your own `item_master.csv` always wins.
+The `Supplier` column of the learned file holds the supplier's GSTIN when the invoice has one
+(so a misread or corrected supplier name does not matter), otherwise the supplier name as read.
+Corrections saved from the VB.NET dialog (OK) are learned the same way.
 
 When the invoice shows a different value than a list (for example another M.R.P), the invoice
 value is kept but marked **unsure**, so the user looks at it.

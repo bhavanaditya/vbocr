@@ -109,6 +109,7 @@ class Invoice:
     scan_id: str = ""
     duplicates: List[Dict[str, str]] = field(default_factory=list)
     source: str = ""  # "ocr", "pdf-text" or "ocr+pdf-text"
+    supplier_gstin: str = ""  # the supplier's GST number, when found on the invoice
 
     def to_dict(self) -> dict:
         return {
@@ -121,6 +122,7 @@ class Invoice:
             "scan_id": self.scan_id,
             "duplicates": self.duplicates,
             "source": self.source,
+            "supplier_gstin": self.supplier_gstin,
         }
 
     @classmethod
@@ -132,4 +134,5 @@ class Invoice:
         for item in data.get("items") or []:
             invoice.items.append({k: str((item or {}).get(k) or "") for k in ITEM_FIELDS})
         invoice.supplier_profile = str(data.get("supplier_profile") or "")
+        invoice.supplier_gstin = str(data.get("supplier_gstin") or "")
         return invoice

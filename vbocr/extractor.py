@@ -4,6 +4,7 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import gstin as gst
 from . import item_master
 from .config import Settings
 from .models import ITEM_FIELDS, Invoice, Page, Table, Word
@@ -19,7 +20,12 @@ _SKIP_NAME_WORDS = ("invoice", "tax", "bill", "original", "duplicate", "copy", "
 def extract_invoice(pages: List[Page], settings: Settings) -> Invoice:
     invoice = Invoice()
     all_text = "\n".join(p.full_text for p in pages)
-    supplier = settings.match_supplier(all_text)
+    supplier_gstin, gstin_valid = gst.supplier_gstin(pages, settings.own_gstins)
+    invoice.supplier_gstin = supplier_gstin
+    if supplier_gstin and not gstin_valid:
+        invoice.warnings.append(
+            "Supplier GSTIN {} fails its check character: a character is probably misread.".format(supplier_gstin))
+    supplier = settings.match_supplier(all_text, supplier_gstin if gstin_valid else "")
     invoice.supplier_profile = (supplier or {}).get("name", "")
 
     labels = settings.header_labels(supplier)
@@ -60,7 +66,8 @@ def extract_invoice(pages: List[Page], settings: Settings) -> Invoice:
     master = settings.item_master
     lists = [settings.resolve(master[k]) for k in ("file", "learned_file") if master.get(k)]
     if lists and invoice.items:
-        _, conflicts = item_master.apply(invoice.items, lists, header["supplier_name"], bool(master.get("overwrite")))
+        _, conflicts = item_master.apply(invoice.items, lists, header["supplier_name"], bool(master.get("overwrite")),
+                                         invoice.supplier_gstin if gstin_valid else "")
         for index, field in conflicts:  # the invoice differs from your item list: check it
             if index < len(item_scores):
                 item_scores[index][field] = 0.0

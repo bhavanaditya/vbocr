@@ -76,6 +76,12 @@ Public Class VbOcrScanForm
     End Enum
 
     Private _invoice As VbOcrInvoice
+    Private _scanId As String = ""
+    Private _supplierGstin As String = ""
+    Private _invoiceNumber As String = ""
+    Private ReadOnly _tip As New ToolTip()
+    Private ReadOnly _btnRecent As New Button()
+    Private ReadOnly _btnEarlier As New Button()
     Private _printedTotal As Decimal = -1D
     Private _expectedItems As Decimal = -1D
     ' Values the OCR was not sure about: item row -> column titles. Cleared when the user edits them.
@@ -151,6 +157,20 @@ Public Class VbOcrScanForm
         End Get
     End Property
 
+    ''' <summary>The supplier's GSTIN read from the invoice (checked), or "". Set after a scan.</summary>
+    Public ReadOnly Property SupplierGstin() As String
+        Get
+            Return _supplierGstin
+        End Get
+    End Property
+
+    ''' <summary>ID of the scan in the server's history, or "".</summary>
+    Public ReadOnly Property ScanId() As String
+        Get
+            Return _scanId
+        End Get
+    End Property
+
     ''' <summary>The files currently in the page list, in page order.</summary>
     Public ReadOnly Property Files() As String()
         Get
@@ -216,6 +236,15 @@ Public Class VbOcrScanForm
         subtitle.AutoSize = True
         subtitle.Location = New Point(66, 34)
 
+        Dim right As New Panel()
+        right.Dock = DockStyle.Right
+        right.Width = 150
+        right.Padding = New Padding(0, 15, 18, 15)
+        SecondaryButton(_btnRecent, "Recent scans...", 130, right)
+        _btnRecent.Dock = DockStyle.Fill
+        AddHandler _btnRecent.Click, AddressOf RecentClicked
+
+        bar.Controls.Add(right)
         bar.Controls.Add(logo)
         bar.Controls.Add(title)
         bar.Controls.Add(subtitle)
@@ -502,7 +531,18 @@ Public Class VbOcrScanForm
         note.TextAlign = ContentAlignment.MiddleLeft
         note.Text = "Nothing is saved until you click ""Use these values""."
 
+        SecondaryButton(_btnEarlier, "Earlier scans of this invoice...", 220, Nothing)
+        _btnEarlier.Dock = DockStyle.Left
+        _btnEarlier.ForeColor = Warning
+        _btnEarlier.Visible = False
+        AddHandler _btnEarlier.Click, AddressOf EarlierClicked
+        Dim gapLeft As New Panel()
+        gapLeft.Dock = DockStyle.Left
+        gapLeft.Width = 12
+
         bar.Controls.Add(note)
+        bar.Controls.Add(gapLeft)
+        bar.Controls.Add(_btnEarlier)
         bar.Controls.Add(_btnCancel)
         bar.Controls.Add(gap)
         bar.Controls.Add(_btnOk)
@@ -970,8 +1010,17 @@ Public Class VbOcrScanForm
             Return
         End If
 
-        Dim result As VbOcrResult = CType(e.Result, VbOcrResult)
+        ShowResult(CType(e.Result, VbOcrResult), seconds, False)
+    End Sub
+
+    ' Shows a scan result (or a scan opened from the history) in the grids and tiles.
+    Private Sub ShowResult(ByVal result As VbOcrResult, ByVal seconds As Integer, ByVal opened As Boolean)
         _invoice = result.Invoice
+        _scanId = result.ScanId
+        _supplierGstin = result.SupplierGstin
+        _invoiceNumber = _invoice.GetHeader("Invoice Number")
+        _btnEarlier.Visible = result.Duplicates.Count > 0
+        _tip.SetToolTip(_statPrinted, result.TotalNote)
 
         _gridHeader.Rows.Clear()
         For Each title As String In VbOcrInvoice.HeaderTitles
@@ -997,20 +1046,206 @@ Public Class VbOcrScanForm
 
         Dim count As Integer = _invoice.Items.Rows.Count
         _btnOk.Enabled = count > 0
-        If count = 0 Then
+        Dim gstinText As String = ""
+        If _supplierGstin.Length > 0 Then gstinText = "  Supplier GSTIN " & _supplierGstin & "."
+        If opened Then
+            SetStatus(Tone.Info, "Saved scan opened from the history (" & count.ToString() & " items). Changes are saved again when you click ""Use these values"".")
+        ElseIf count = 0 Then
             SetStatus(Tone.Bad, "No items found. " & result.Warnings & "  Try a sharper, straighter photo of the whole page.")
         ElseIf result.Warnings.Length > 0 OrElse result.UnsureCells.Count > 0 Then
             Dim message As String = "Please check: "
             If result.UnsureCells.Count > 0 Then
                 message &= result.UnsureCells.Count.ToString() & " value(s) the OCR was not sure about (amber). "
             End If
-            SetStatus(Tone.Warn, message & result.Warnings)
+            SetStatus(Tone.Warn, message & result.Warnings & gstinText)
         ElseIf result.Source = "pdf-text" Then
-            SetStatus(Tone.Good, count.ToString() & " items read exactly from the PDF text. Check the values, then click ""Use these values"".")
+            SetStatus(Tone.Good, count.ToString() & " items read exactly from the PDF text. Check the values, then click ""Use these values""." & gstinText)
         Else
-            SetStatus(Tone.Good, count.ToString() & " items read in " & seconds.ToString() & " s. Compare the total amount with the invoice, then click ""Use these values"".")
+            SetStatus(Tone.Good, count.ToString() & " items read in " & seconds.ToString() & " s. Compare the total amount with the invoice, then click ""Use these values""." & gstinText)
         End If
     End Sub
+
+    Private Function NewClient() As VbOcrClient
+        Dim client As New VbOcrClient(ServerUrl)
+        client.ApiKey = ApiKey
+        Return client
+    End Function
+
+    Private Sub RecentClicked(ByVal sender As Object, ByVal e As EventArgs)
+        ShowRecentScans("")
+    End Sub
+
+    Private Sub EarlierClicked(ByVal sender As Object, ByVal e As EventArgs)
+        ShowRecentScans(_invoiceNumber)
+    End Sub
+
+    ' Lists earlier scans; the one the user opens replaces the current result.
+    Private Sub ShowRecentScans(ByVal query As String)
+        If _worker.IsBusy Then Return
+        Dim client As VbOcrClient = NewClient()
+        If Not client.IsReady() Then
+            MessageBox.Show(Me, "The VB OCR server is not running. Scan an invoice first (that starts it), or run start-server.bat.", _
+                "Recent scans", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        Using list As New RecentScansForm(client, query, Font)
+            If list.ShowDialog(Me) <> DialogResult.OK OrElse list.SelectedId.Length = 0 Then Return
+            Try
+                Cursor = Cursors.WaitCursor
+                ShowResult(client.OpenScan(list.SelectedId), 0, True)
+            Catch ex As VbOcrException
+                MessageBox.Show(Me, ex.Message, "Recent scans", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Finally
+                Cursor = Cursors.Default
+            End Try
+        End Using
+    End Sub
+
+    ' Sends the accepted values to the server in the background (scan history, statistics and
+    ' remembered item values). The dialog does not wait; errors are ignored.
+    Private Class CorrectionJob
+        Private ReadOnly _client As VbOcrClient
+        Private ReadOnly _scanId As String
+        Private ReadOnly _invoice As VbOcrInvoice
+
+        Public Sub New(ByVal client As VbOcrClient, ByVal scanId As String, ByVal invoice As VbOcrInvoice)
+            _client = client
+            _scanId = scanId
+            _invoice = invoice
+        End Sub
+
+        Public Sub Run(ByVal state As Object)
+            Try
+                _client.SaveCorrections(_scanId, _invoice)
+            Catch ex As Exception
+                ' The values are already in the application; the history is only a convenience.
+            End Try
+        End Sub
+    End Class
+
+    ' "Recent scans" window: search, then Open (or double-click) a scan.
+    Private Class RecentScansForm
+        Inherits Form
+
+        Private ReadOnly _client As VbOcrClient
+        Private ReadOnly _search As New TextBox()
+        Private ReadOnly _grid As New DataGridView()
+        Private ReadOnly _btnOpen As New Button()
+        Private _selectedId As String = ""
+
+        Public Sub New(ByVal client As VbOcrClient, ByVal query As String, ByVal baseFont As Font)
+            _client = client
+            Text = "Recent scans"
+            Font = baseFont
+            Size = New Size(900, 520)
+            MinimumSize = New Size(600, 300)
+            StartPosition = FormStartPosition.CenterParent
+            BackColor = Surface
+
+            Dim top As New Panel()
+            top.Dock = DockStyle.Top
+            top.Height = 44
+            top.Padding = New Padding(12, 10, 12, 6)
+            _search.Dock = DockStyle.Fill
+            _search.Text = query
+            Dim searchButton As New Button()
+            searchButton.Text = "Search"
+            searchButton.Dock = DockStyle.Right
+            searchButton.Width = 90
+            top.Controls.Add(_search)
+            top.Controls.Add(searchButton)
+            AddHandler searchButton.Click, AddressOf SearchClicked
+
+            _grid.Dock = DockStyle.Fill
+            _grid.ReadOnly = True
+            _grid.AllowUserToAddRows = False
+            _grid.AllowUserToDeleteRows = False
+            _grid.RowHeadersVisible = False
+            _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+            _grid.MultiSelect = False
+            _grid.BackgroundColor = Surface
+            _grid.BorderStyle = BorderStyle.None
+            _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+            For Each title As String In New String() {"Scanned", "Supplier", "Invoice No.", "Invoice date", "Items", "Amount", "To check", "Corrected"}
+                _grid.Columns.Add(title, title)
+            Next
+            _grid.Columns(1).FillWeight = 220
+            AddHandler _grid.CellDoubleClick, AddressOf GridDoubleClick
+
+            Dim bottom As New Panel()
+            bottom.Dock = DockStyle.Bottom
+            bottom.Height = 48
+            bottom.Padding = New Padding(12, 8, 12, 8)
+            _btnOpen.Text = "Open"
+            _btnOpen.Dock = DockStyle.Right
+            _btnOpen.Width = 110
+            Dim cancel As New Button()
+            cancel.Text = "Close"
+            cancel.Dock = DockStyle.Right
+            cancel.Width = 100
+            cancel.DialogResult = DialogResult.Cancel
+            Dim gap As New Panel()
+            gap.Dock = DockStyle.Right
+            gap.Width = 8
+            bottom.Controls.Add(cancel)
+            bottom.Controls.Add(gap)
+            bottom.Controls.Add(_btnOpen)
+            AddHandler _btnOpen.Click, AddressOf OpenClicked
+
+            Controls.Add(_grid)
+            Controls.Add(top)
+            Controls.Add(bottom)
+            AcceptButton = searchButton
+            CancelButton = cancel
+            AddHandler Shown, AddressOf FormShown
+        End Sub
+
+        Public ReadOnly Property SelectedId() As String
+            Get
+                Return _selectedId
+            End Get
+        End Property
+
+        Private Sub FormShown(ByVal sender As Object, ByVal e As EventArgs)
+            LoadScans()
+        End Sub
+
+        Private Sub SearchClicked(ByVal sender As Object, ByVal e As EventArgs)
+            LoadScans()
+        End Sub
+
+        Private Sub LoadScans()
+            _grid.Rows.Clear()
+            Try
+                Cursor = Cursors.WaitCursor
+                Dim india As New CultureInfo("en-IN")
+                For Each scan As VbOcrScanInfo In _client.GetRecentScans(200, _search.Text.Trim())
+                    Dim amount As String = ""
+                    If scan.Amount.Length > 0 Then amount = VbOcrInvoice.ToDecimal(scan.Amount).ToString("#,##0.00", india)
+                    Dim checkText As String = ""
+                    If scan.WarningCount > 0 Then checkText = scan.WarningCount.ToString()
+                    Dim index As Integer = _grid.Rows.Add(scan.Scanned, scan.SupplierName, scan.InvoiceNumber, scan.InvoiceDate, _
+                        scan.ItemCount.ToString(), amount, checkText, scan.Corrected)
+                    _grid.Rows(index).Tag = scan.Id
+                Next
+            Catch ex As VbOcrException
+                MessageBox.Show(Me, ex.Message, "Recent scans", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Finally
+                Cursor = Cursors.Default
+            End Try
+            _btnOpen.Enabled = _grid.Rows.Count > 0
+        End Sub
+
+        Private Sub OpenClicked(ByVal sender As Object, ByVal e As EventArgs)
+            If _grid.CurrentRow Is Nothing Then Return
+            _selectedId = Convert.ToString(_grid.CurrentRow.Tag)
+            DialogResult = DialogResult.OK
+        End Sub
+
+        Private Sub GridDoubleClick(ByVal sender As Object, ByVal e As DataGridViewCellEventArgs)
+            If e.RowIndex >= 0 Then OpenClicked(sender, e)
+        End Sub
+    End Class
 
     Private Sub FormatItemColumns()
         For Each column As DataGridViewColumn In _gridItems.Columns
@@ -1107,6 +1342,11 @@ Public Class VbOcrScanForm
             If row.Cells(1).Value IsNot Nothing Then value = Convert.ToString(row.Cells(1).Value)
             _invoice.Header(Convert.ToString(row.Cells(0).Value)) = value
         Next
+        If _scanId.Length > 0 Then
+            ' A copy, so the application can change dlg.Invoice while this is being sent.
+            Dim job As New CorrectionJob(NewClient(), _scanId, VbOcrInvoice.Parse(_invoice.ToCsv()))
+            System.Threading.ThreadPool.QueueUserWorkItem(AddressOf job.Run)
+        End If
         DialogResult = DialogResult.OK
     End Sub
 

@@ -170,6 +170,10 @@ To run VB OCR on one PC and scan from several PCs:
    (or set `ServerUrl` and `ApiKey` on `VbOcrScanForm`). In the browser, open
    `http://192.168.1.20:5000`; it asks for the key once.
 
+4. **Phones:** with `host: 0.0.0.0` set, click **Phone** on the browser page of the server PC and
+   scan the QR code with the phone camera (phone on the same Wi-Fi). See
+   [USAGE.md](USAGE.md#scan-with-a-phone).
+
 > The traffic is plain HTTP. Only open the server on a trusted office network, never to the internet.
 
 ## Updating

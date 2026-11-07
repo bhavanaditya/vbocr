@@ -8,6 +8,7 @@
     python -m vbocr scan invoice.pdf --json
     python -m vbocr serve
     python -m vbocr setup
+    python -m vbocr diagnostics                                  zip with logs and settings, to ask for help
 """
 
 import argparse
@@ -75,6 +76,13 @@ def main(argv=None) -> int:
 
     sub.add_parser("setup", help="Download the OCR models now (needs internet once)")
 
+    diag = sub.add_parser(
+        "diagnostics",
+        help="Save a zip with logs, settings (keys removed) and versions, to send when asking for help",
+        description="Contains no invoices, scan history or item list.",
+    )
+    diag.add_argument("-o", "--output", help="Zip file or folder (default: the logs folder)")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -100,6 +108,15 @@ def _run(args) -> int:
         if engine.mkldnn_fallback:
             _save_mkldnn_off(settings.local_settings_path)
         print("OCR models are ready (test read {} lines).".format(lines), file=sys.stderr)
+        return 0
+
+    if args.command == "diagnostics":
+        from . import diagnostics
+
+        target = diagnostics.save(settings, args.output)
+        print(str(target))
+        print("Diagnostics saved. It holds logs, settings (access keys removed) and versions; "
+              "no invoices.", file=sys.stderr)
         return 0
 
     if args.command == "serve":

@@ -86,11 +86,13 @@ class History:
             data = json.loads(path.read_text(encoding="utf-8"))
             original = data.get("original") or {"header": data.get("header") or {}, "items": data.get("items") or []}
             data["original"] = original
+            original = dict(original, supplier_gstin=data.get("supplier_gstin", ""))
             data["header"] = invoice.header
             data["items"] = invoice.items
             data["csv"] = csv_text
-            data["corrected"] = datetime.now().strftime("%d-%m-%Y %H:%M")
             data["changes"] = changes(original, invoice.header, invoice.items)
+            if data["changes"]:
+                data["corrected"] = datetime.now().strftime("%d-%m-%Y %H:%M")
             path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
             return original
 
@@ -160,6 +162,7 @@ class History:
                 "supplier_name": header.get("supplier_name", ""),
                 "invoice_number": header.get("invoice_number", ""),
                 "invoice_date": header.get("invoice_date", ""),
+                "supplier_gstin": data.get("supplier_gstin", ""),
                 "items": len(data.get("items") or []),
                 "amount": (data.get("total_check") or {}).get("items_total", ""),
                 "warnings": len(data.get("warnings") or []),
@@ -167,7 +170,8 @@ class History:
                 "corrected": data.get("corrected", ""),
             }
             if wanted:
-                haystack = _key(" ".join([summary["supplier_name"], summary["invoice_number"]] + summary["files"]))
+                haystack = _key(" ".join([summary["supplier_name"], summary["invoice_number"],
+                                          summary["supplier_gstin"]] + summary["files"]))
                 if wanted not in haystack:
                     continue
             result.append(summary)
@@ -186,9 +190,13 @@ class History:
         return sorted(self.folder.glob("*/*.json"), key=lambda p: p.name, reverse=True)
 
     def _find_duplicates(self, invoice: Invoice) -> List[Dict[str, str]]:
+        """Earlier scans with the same invoice number from the same supplier. The supplier is
+        compared by GSTIN when both scans have one (exact even when the name is read
+        differently), otherwise by name."""
         number = _key(invoice.header.get("invoice_number", ""))
         supplier = _key(invoice.header.get("supplier_name", ""))
-        if not number or not supplier:
+        gstin = invoice.supplier_gstin
+        if not number or not (supplier or gstin):
             return []
         found = []
         for path in self._files_newest_first():
@@ -199,7 +207,12 @@ class History:
             except (OSError, ValueError):
                 continue
             header = data.get("header") or {}
-            if _key(header.get("invoice_number", "")) == number and _key(header.get("supplier_name", "")) == supplier:
+            if _key(header.get("invoice_number", "")) != number:
+                continue
+            other_gstin = data.get("supplier_gstin") or ""
+            same = (other_gstin == gstin) if (gstin and other_gstin) else (
+                bool(supplier) and _key(header.get("supplier_name", "")) == supplier)
+            if same:
                 found.append({"id": data.get("id", path.stem), "scanned": data.get("scanned", "")})
         return found
 

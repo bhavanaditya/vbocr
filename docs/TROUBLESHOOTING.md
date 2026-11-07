@@ -85,6 +85,15 @@ The server has `server.api_key` set. Enter the key in the browser page when it a
 `VbOcrClient.ApiKey` / `VbOcrScanForm.ApiKey` in the VB.NET app. The key is in
 `config\settings.local.yaml` on the server PC.
 
+### The phone cannot open the page from the QR code
+
+- The phone must be on the **same Wi-Fi** as the PC, not on mobile data or a guest network.
+- The server must allow other devices: `host: 0.0.0.0` in `config\settings.local.yaml`, then
+  restart the server. Until then **Phone** shows these steps instead of a QR code.
+- Windows Firewall must allow the port (see [INSTALLATION.md](INSTALLATION.md#network-use)).
+- The PC may have several addresses (Wi-Fi, cable, VPN). The **Phone** window lists them all;
+  type another one on the phone if the first does not work.
+
 ### "Printed total ✗" / "Total check: the items add up to … but the invoice shows …"
 
 The item amounts do not add up to the total printed on the invoice. Usually a row was missed
@@ -155,7 +164,9 @@ different invoice numbers). Choose **Separate invoices** in the browser, `scan.b
 
 When reporting a problem, include:
 
-1. The text in the server window, or `logs\last-error.txt`
-2. The output of `.venv\Scripts\python.exe -m vbocr --version`
+1. The **diagnostics zip**: double-click `diagnostics.bat` (or click **Diagnostics** on the browser
+   page). It holds the logs, the settings with access keys removed, and the versions of Windows,
+   Python and every package. It contains no invoices, history or item list.
+2. The text in the server window, if it is still open
 3. The output of `.venv\Scripts\python.exe -m vbocr scan <file> --json`
 4. If possible, the invoice image with confidential details covered

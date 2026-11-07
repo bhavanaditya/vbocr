@@ -5,9 +5,10 @@
 #
 # Fields:
 #   name                   Supplier name written to the CSV
+#   gstin                  The supplier's GSTIN (or a list). Recognised exactly, even
+#                          when the name is misread. Best way to identify a supplier.
 #   match                  Text that identifies the supplier (any one is enough,
-#                          case-insensitive). Use something unique such as the
-#                          supplier's GSTIN, e-mail or website.
+#                          case-insensitive), e.g. e-mail or website.
 #   brand                  Default brand for every item
 #   header_fields          Extra labels for header values (added before the
 #                          defaults from settings.yaml)

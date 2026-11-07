@@ -39,7 +39,8 @@ suppliers:
   # ... existing suppliers ...
 
   - name: Lakshmi Garments                 # written to "Supplier Name"
-    match: ["33ABCDE1234F1Z5", "lakshmigarments.com"]
+    gstin: 33ABCDE1234F1Z5                  # best: the supplier's GSTIN (or a list)
+    match: ["lakshmigarments.com"]          # text on their invoices (used when no GSTIN is read)
     brand: Lakshmi                          # default "Brand Name" for every item
     header_fields:
       invoice_number: ["bill ref"]          # "Bill Ref : LG-0042"
@@ -52,7 +53,12 @@ suppliers:
       - '^(?P<design_name>.+?)\s+(?P<size>XS|S|M|L|XL|XXL)$'
 ```
 
-All fields except `name` and `match` are optional. Labels and column names in a profile are
+**`gstin`** is the most reliable way to recognise a supplier: VB OCR reads the GSTIN, corrects
+look-alike characters (O/0, I/1, S/5, …) only when the corrected number passes the GSTIN check
+character, and then picks the profile with exactly that GSTIN. `match` texts are used when no
+profile has the GSTIN. The browser result shows the GSTIN that was read; copy it from there.
+
+All fields except `name` and `gstin` or `match` are optional. Labels and column names in a profile are
 tried **before** the defaults from `settings.yaml`.
 
 To choose quantity or amount columns, use `output.quantity_priority` / `output.amount_priority`

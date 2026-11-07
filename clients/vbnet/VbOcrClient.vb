@@ -74,6 +74,13 @@ Public Class VbOcrResult
     Public ScanId As String = ""
     ''' <summary>"ocr" or "pdf-text" (read exactly from a digital PDF).</summary>
     Public Source As String = ""
+    ''' <summary>The supplier's GSTIN when found on the invoice (checked), else "".</summary>
+    Public SupplierGstin As String = ""
+    ''' <summary>How the printed total was explained, e.g. "printed total = items + CGST 116.03 + ...".</summary>
+    Public TotalNote As String = ""
+    ''' <summary>Earlier scans of the same invoice (same supplier and invoice number): only
+    ''' Id and Scanned are set. Empty when this invoice is new.</summary>
+    Public Duplicates As New List(Of VbOcrScanInfo)
 
     ''' <summary>True when the OCR was not sure about this value. row 0 = a header value,
     ''' 1 = first item row. title = CSV column title, e.g. "Quantity".</summary>
@@ -95,6 +102,18 @@ Public Class VbOcrResult
         If headers("X-VBOCR-Warnings") IsNot Nothing Then Warnings = headers("X-VBOCR-Warnings")
         If headers("X-VBOCR-Scan-Id") IsNot Nothing Then ScanId = headers("X-VBOCR-Scan-Id")
         If headers("X-VBOCR-Source") IsNot Nothing Then Source = headers("X-VBOCR-Source")
+        If headers("X-VBOCR-Supplier-GSTIN") IsNot Nothing Then SupplierGstin = headers("X-VBOCR-Supplier-GSTIN")
+        If headers("X-VBOCR-Total-Note") IsNot Nothing Then TotalNote = headers("X-VBOCR-Total-Note")
+        Dim duplicateText As String = headers("X-VBOCR-Duplicates")
+        If duplicateText IsNot Nothing Then
+            For Each part As String In duplicateText.Split(New Char() {";"c}, StringSplitOptions.RemoveEmptyEntries)
+                Dim pieces() As String = part.Split("|"c)
+                Dim info As New VbOcrScanInfo()
+                info.Id = pieces(0)
+                If pieces.Length > 1 Then info.Scanned = pieces(1)
+                Duplicates.Add(info)
+            Next
+        End If
         Dim check As String = headers("X-VBOCR-Total-Check")
         If check IsNot Nothing Then
             Dim parts() As String = check.Split("|"c)
@@ -119,6 +138,23 @@ Public Class VbOcrResult
             Next
         End If
     End Sub
+End Class
+
+''' <summary>A scan in the server's history (see VbOcrClient.GetRecentScans).</summary>
+Public Class VbOcrScanInfo
+    Public Id As String = ""
+    ''' <summary>When it was scanned, "dd-MM-yyyy HH:mm".</summary>
+    Public Scanned As String = ""
+    Public SupplierName As String = ""
+    Public SupplierGstin As String = ""
+    Public InvoiceNumber As String = ""
+    Public InvoiceDate As String = ""
+    Public ItemCount As Integer
+    ''' <summary>Sum of the item amounts as text, e.g. "4741.10".</summary>
+    Public Amount As String = ""
+    Public WarningCount As Integer
+    ''' <summary>When the values were last corrected, or "".</summary>
+    Public Corrected As String = ""
 End Class
 
 ''' <summary>One value of the invoice: Row 0 = header value, 1 = first item row.</summary>
@@ -304,6 +340,93 @@ Public Class VbOcrClient
         Return result
     End Function
 
+    ''' <summary>Sends the values the user checked and corrected back to the server, for the
+    ''' scan history, the "what gets corrected" statistics, and to remember item values (Size,
+    ''' M.R.P, ...) for the next invoice with the same SKU. Call it when the user accepts the
+    ''' values. Returns the number of item values remembered. Does nothing without a scanId.</summary>
+    Public Function SaveCorrections(ByVal scanId As String, ByVal invoice As VbOcrInvoice) As Integer
+        If String.IsNullOrEmpty(scanId) OrElse invoice Is Nothing Then Return 0
+        Dim bytes() As Byte = New UTF8Encoding(False).GetBytes(invoice.ToJson(scanId))
+        Dim request As HttpWebRequest = CreateRequest("csv", 30)
+        request.Method = "POST"
+        request.ContentType = "application/json; charset=utf-8"
+        request.ContentLength = bytes.Length
+        Try
+            Using stream As Stream = request.GetRequestStream()
+                stream.Write(bytes, 0, bytes.Length)
+            End Using
+            Using response As HttpWebResponse = CType(request.GetResponse(), HttpWebResponse)
+                ReadBody(response)
+                Dim learned As Integer
+                Integer.TryParse(response.Headers("X-VBOCR-Learned"), learned)
+                Return learned
+            End Using
+        Catch ex As WebException
+            Throw ServerError(ex)
+        End Try
+    End Function
+
+    ''' <summary>Recent scans from the server's history, newest first. query filters on the
+    ''' supplier, invoice number, GSTIN or file name ("" = all).</summary>
+    Public Function GetRecentScans(ByVal limit As Integer, ByVal query As String) As List(Of VbOcrScanInfo)
+        Dim url As String = "history.csv?limit=" & Math.Max(1, Math.Min(500, limit)).ToString(CultureInfo.InvariantCulture)
+        If Not String.IsNullOrEmpty(query) Then url &= "&q=" & Uri.EscapeDataString(query)
+        Dim rows As List(Of String()) = VbOcrInvoice.ReadCsvRows(GetText(url))
+        Dim scans As New List(Of VbOcrScanInfo)
+        For r As Integer = 1 To rows.Count - 1
+            Dim f() As String = rows(r)
+            If f.Length < 10 Then Continue For
+            Dim info As New VbOcrScanInfo()
+            info.Id = f(0)
+            info.Scanned = f(1)
+            info.SupplierName = f(2)
+            info.SupplierGstin = f(3)
+            info.InvoiceNumber = f(4)
+            info.InvoiceDate = f(5)
+            Integer.TryParse(f(6), info.ItemCount)
+            info.Amount = f(7)
+            Integer.TryParse(f(8), info.WarningCount)
+            info.Corrected = f(9)
+            scans.Add(info)
+        Next
+        Return scans
+    End Function
+
+    ''' <summary>Opens a saved scan, with the corrections saved for it. The result has Csv,
+    ''' Invoice, ItemCount and ScanId; the other details are only known right after a scan.</summary>
+    Public Function OpenScan(ByVal scanId As String) As VbOcrResult
+        Dim result As New VbOcrResult()
+        result.Csv = GetText("history/" & Uri.EscapeDataString(scanId) & ".csv")
+        result.Invoice = VbOcrInvoice.Parse(result.Csv)
+        result.ItemCount = result.Invoice.Items.Rows.Count
+        result.ScanId = scanId
+        Return result
+    End Function
+
+    Private Function GetText(ByVal relativeUrl As String) As String
+        Dim request As HttpWebRequest = CreateRequest(relativeUrl, 30)
+        Try
+            Using response As HttpWebResponse = CType(request.GetResponse(), HttpWebResponse)
+                Return ReadBody(response)
+            End Using
+        Catch ex As WebException
+            Throw ServerError(ex)
+        End Try
+    End Function
+
+    Private Function ServerError(ByVal ex As WebException) As VbOcrException
+        Dim errorResponse As HttpWebResponse = TryCast(ex.Response, HttpWebResponse)
+        If errorResponse Is Nothing Then
+            Return New VbOcrException("Cannot reach the VB OCR server at " & _baseUrl & _
+                ". Start it with start-server.bat or EnsureServerRunning. (" & ex.Message & ")", ex)
+        End If
+        Dim message As String = ServerErrorText(ReadBody(errorResponse))
+        If errorResponse.StatusCode = HttpStatusCode.Unauthorized Then
+            Return New VbOcrException(message & " (Set VbOcrClient.ApiKey to the key in the server's config\settings.local.yaml.)", ex)
+        End If
+        Return New VbOcrException("VB OCR server error " & CInt(errorResponse.StatusCode).ToString(CultureInfo.InvariantCulture) & ": " & message, ex)
+    End Function
+
     ''' <summary>Scans every file as a SEPARATE invoice (for example a folder of bills).
     ''' Returns one result per file, in the same order. A file that fails does not stop the
     ''' others: its result has Invoice = Nothing and the reason in ErrorMessage.</summary>
@@ -482,19 +605,7 @@ Public Class VbOcrInvoice
     Public Shared Function Parse(ByVal csv As String) As VbOcrInvoice
         Dim invoice As New VbOcrInvoice()
         If csv Is Nothing Then Return invoice
-        csv = csv.TrimStart(ChrW(&HFEFF))
-
-        Dim rows As New List(Of String())
-        Using parser As New TextFieldParser(New StringReader(csv))
-            parser.TextFieldType = FieldType.Delimited
-            parser.SetDelimiters(",")
-            parser.HasFieldsEnclosedInQuotes = True
-            parser.TrimWhiteSpace = False
-            Do While Not parser.EndOfData
-                Dim fields() As String = parser.ReadFields()
-                If fields IsNot Nothing Then rows.Add(fields)
-            Loop
-        End Using
+        Dim rows As List(Of String()) = ReadCsvRows(csv)
         If rows.Count < 2 Then Return invoice
 
         ' Rows 1-2: header titles and values. Column A is empty.
@@ -524,6 +635,76 @@ Public Class VbOcrInvoice
 
     ''' <summary>Writes the invoice back to CSV in the same layout, for example after the
     ''' user corrected values or GRN Number was filled in. The Total row is recalculated.</summary>
+    ' Field names the server uses, in the same order as HeaderTitles and ItemTitles (without Sl.No).
+    Private Shared ReadOnly HeaderFields() As String = New String() { _
+        "date", "supplier_name", "po_date", "po_number", "lr_booking_date", _
+        "stock_received_date", "invoice_number", "invoice_date", "grn_number"}
+    Private Shared ReadOnly ItemFields() As String = New String() { _
+        "sku", "article_id", "brand", "design_name", "size", "cup_size", "colour", _
+        "quantity", "cost_price", "mrp", "amount"}
+
+    ''' <summary>The invoice as JSON for the server's /csv endpoint.</summary>
+    Public Function ToJson(ByVal scanId As String) As String
+        Dim sb As New StringBuilder()
+        sb.Append("{""scan_id"":").Append(JsonText(scanId)).Append(",""header"":{")
+        For i As Integer = 0 To HeaderFields.Length - 1
+            If i > 0 Then sb.Append(","c)
+            sb.Append(JsonText(HeaderFields(i))).Append(":"c).Append(JsonText(GetHeader(HeaderTitles(i))))
+        Next
+        sb.Append("},""items"":[")
+        Dim first As Boolean = True
+        For Each row As DataRow In Items.Rows
+            If row.RowState = DataRowState.Deleted Then Continue For
+            If Not first Then sb.Append(","c)
+            first = False
+            sb.Append("{"c)
+            For i As Integer = 0 To ItemFields.Length - 1
+                If i > 0 Then sb.Append(","c)
+                sb.Append(JsonText(ItemFields(i))).Append(":"c).Append(JsonText(CellText(row, ItemTitles(i + 1))))
+            Next
+            sb.Append("}"c)
+        Next
+        sb.Append("]}")
+        Return sb.ToString()
+    End Function
+
+    Private Shared Function JsonText(ByVal value As String) As String
+        Dim sb As New StringBuilder()
+        sb.Append(""""c)
+        If value IsNot Nothing Then
+            For Each c As Char In value
+                If c = """"c Then
+                    sb.Append("\""")
+                ElseIf c = "\"c Then
+                    sb.Append("\\")
+                ElseIf AscW(c) < 32 Then
+                    sb.Append("\u").Append(AscW(c).ToString("x4", CultureInfo.InvariantCulture))
+                Else
+                    sb.Append(c)
+                End If
+            Next
+        End If
+        sb.Append(""""c)
+        Return sb.ToString()
+    End Function
+
+    ''' <summary>Splits CSV text into rows of fields (quotes and commas inside quotes handled).</summary>
+    Public Shared Function ReadCsvRows(ByVal csv As String) As List(Of String())
+        Dim rows As New List(Of String())
+        If csv Is Nothing Then Return rows
+        Using parser As New TextFieldParser(New StringReader(csv.TrimStart(ChrW(&HFEFF))))
+            parser.TextFieldType = FieldType.Delimited
+            parser.SetDelimiters(",")
+            parser.HasFieldsEnclosedInQuotes = True
+            parser.TrimWhiteSpace = False
+            Do While Not parser.EndOfData
+                Dim fields() As String = parser.ReadFields()
+                If fields IsNot Nothing Then rows.Add(fields)
+            Loop
+        End Using
+        Return rows
+    End Function
+
     Public Function ToCsv() As String
         Dim sb As New StringBuilder()
         Dim line As New List(Of String)

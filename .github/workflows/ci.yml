@@ -14,11 +14,11 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - run: pip install pytest PyYAML Pillow numpy opencv-python-headless pypdfium2 fastapi python-multipart
+      - run: pip install pytest PyYAML Pillow numpy opencv-python-headless pypdfium2 fastapi python-multipart segno httpx
       - run: python -m pytest -q tests
 
   # The real thing on Windows: install.bat, OCR models, end-to-end scans, the VB.NET client,
@@ -29,14 +29,14 @@ jobs:
     env:
       VBOCR_YES: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: models
           key: ocr-models-${{ hashFiles('requirements.txt', 'config/settings.yaml') }}
@@ -68,7 +68,7 @@ jobs:
         run: dotnet build clients/vbnet/tests/BuildCheck
 
       # One step: Windows runners stop processes started by a step when that step ends.
-      - name: VB.NET client against a server with an access key
+      - name: VB.NET client and scan dialog against a server with an access key
         shell: pwsh
         run: |
           Add-Content config\settings.local.yaml "`nserver:`n  api_key: ci-key-123`n"
@@ -82,6 +82,30 @@ jobs:
           if (-not $ready) { Get-Content server.log -Tail 50; exit 1 }
           dotnet run --project clients/vbnet/tests/ClientTest -- http://127.0.0.1:5077 test-files ci-key-123
           if ($LASTEXITCODE -ne 0) { Get-Content server.log -Tail 50; exit 1 }
+          dotnet run --project clients/vbnet/tests/DialogTest -- http://127.0.0.1:5077 test-files ci-key-123 dialog-screenshots
+          if ($LASTEXITCODE -ne 0) { Get-Content server.log -Tail 50; exit 1 }
+
+      - name: Dialog screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: dialog-screenshots
+          path: dialog-screenshots
+          if-no-files-found: ignore
+
+      - name: Diagnostics zip has logs and settings, without the access key
+        shell: pwsh
+        run: |
+          $zip = (.venv\Scripts\python.exe -m vbocr diagnostics -o diagnostics.zip)
+          if ($LASTEXITCODE -ne 0) { throw "diagnostics failed" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip))
+          $names = $archive.Entries | ForEach-Object { $_.FullName }
+          $archive.Dispose()
+          $names
+          if ($names -notcontains 'summary.json' -or $names -notcontains 'config/settings.local.yaml') { throw "missing files" }
+          Expand-Archive $zip diag -Force
+          if (Select-String -Path diag\config\* -Pattern 'ci-key-123' -SimpleMatch) { throw "access key in the zip" }
 
       - name: autostart-on.bat starts the server hidden (port 5000)
         shell: pwsh

@@ -5,7 +5,8 @@
 ```
 vbocr/
 ├── install.bat, update.bat, start-server.bat, scan.bat, scan-folder.bat,
-│   autostart-on.bat, autostart-off.bat        Windows scripts
+│   autostart-on.bat, autostart-off.bat,
+│   watch-folder.bat, diagnostics.bat          Windows scripts
 ├── install.sh, start-server.sh                macOS / Linux scripts
 ├── requirements.txt                           runtime packages (pinned OCR versions)
 ├── requirements-dev.txt                       + test tools
@@ -15,7 +16,7 @@ vbocr/
 │   ├── suppliers.yaml                         supplier profiles
 │   └── item_master.example.csv                example item list
 ├── vbocr/                                     Python package
-│   ├── cli.py            command line (scan / serve / setup)
+│   ├── cli.py            command line (scan / serve / watch / setup / diagnostics / samples)
 │   ├── server.py         HTTP server (FastAPI)
 │   ├── upload.html       browser upload page (files, folder, drag and drop, paste)
 │   ├── scanner.py        files in → Invoice / CSV out
@@ -26,7 +27,9 @@ vbocr/
 │   ├── samples.py        test bench with your own invoices
 │   ├── table.py          rebuilds the item table from text boxes
 │   ├── extractor.py      header values, column mapping, supplier rules, total check, unsure values
-│   ├── item_master.py    optional item list that fills empty columns
+│   ├── item_master.py    optional item list that fills empty columns, learned values
+│   ├── gstin.py          GSTIN reading, check character, supplier vs buyer GSTIN
+│   ├── diagnostics.py    diagnostics zip (logs, settings without keys, versions)
 │   ├── history.py        scan history, duplicate warning
 │   ├── csv_output.py     purchase-entry CSV layout
 │   ├── config.py         loads the YAML files

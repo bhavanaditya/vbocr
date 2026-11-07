@@ -10,6 +10,10 @@ Read supplier invoice photos and scans and turn them into a **purchase-entry CSV
   and sideways or upside-down pictures turned the right way.
 - Reads **JPG, PNG, BMP, TIFF, WEBP, GIF and PDF**. Several pages per invoice, or many invoices at once.
 - **Many ways to upload:** choose files or a folder, drag and drop, paste a screenshot (Ctrl+V), or take a phone photo.
+- **Scan with a phone:** scan the QR code shown on the PC and photograph the invoice; the result
+  appears on the PC.
+- Reads the **supplier's GSTIN** and checks it with its check character. It is used to recognise the
+  supplier and to find invoices that were already scanned.
 - Works with **any supplier layout** that has an item table with a serial-number column.
 - Outputs the **exact CSV layout** of the purchase-entry Excel sheet.
 - **Digital PDFs are read exactly** from their text, in well under a second. Scanned PDFs use OCR.
@@ -20,12 +24,14 @@ Read supplier invoice photos and scans and turn them into a **purchase-entry CSV
   type (Size, M.R.P, …) are remembered for the next invoice with that SKU.
 - **Watch a folder:** every invoice your scanner saves there is read automatically.
 - A PDF holding **several invoices** is split into one CSV per invoice.
-- **Scan history** with search, and a warning when the same invoice is scanned twice.
+- **Scan history** with search, and a warning when the same invoice is scanned twice (also in
+  the VB.NET dialog). Corrections made in the VB.NET dialog are saved and learned too.
 - Optional **item list** (CSV) fills columns the invoice does not print, such as M.R.P or Size.
 - Optional **access key** when the server is shared on the office network.
 - **Easy to install and keep current:** `install.bat` can install Python for you, `update.bat`
   updates in one click, and the browser page says when a new version is out.
 - **Tested on Windows on every change** (GitHub Actions), and a test bench for your own invoices.
+- **Diagnostics zip** (logs, settings without keys, versions) to send when asking for help.
 
 Built on [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (Apache-2.0), [FastAPI](https://fastapi.tiangolo.com/) (MIT) and [Uvicorn](https://www.uvicorn.org/) (BSD).
 

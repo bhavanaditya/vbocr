@@ -29,6 +29,11 @@ ocr:
   # "ConvertPirAttribute2RuntimeAttribute not support"; then VB OCR switches it off by
   # itself, and install.bat saves "enable_mkldnn: false" in settings.local.yaml.
 
+# Your own business. Your GSTIN is printed on every purchase invoice (as the buyer); listing it
+# here makes sure it is never taken as the supplier's GSTIN. Several: ["29AAA...", "33AAA..."]
+company:
+  gstin: []
+
 # Phone photos are cleaned up before reading. Both steps only act when needed, so scans and
 # screenshots are not changed.
 photo:

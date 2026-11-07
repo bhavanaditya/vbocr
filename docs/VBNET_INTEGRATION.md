@@ -109,6 +109,15 @@ The dialog also:
 - highlights values the OCR was not sure about
 - shows a preview of the selected page, so values can be checked against the picture
 - returns the corrected values in `dlg.Invoice`
+- on **OK**, sends the corrections to the server in the background (scan history, the
+  "What gets corrected" statistics, and learned item values such as Size or M.R.P for the next
+  invoice). This never delays or blocks OK; when the server cannot be reached it is skipped
+- shows the supplier's GSTIN in the status bar (`dlg.SupplierGstin`), and the reason for a total
+  difference (GST, freight, discount) as a tooltip on the printed-total tile
+- **Recent scans...** (title bar) lists earlier scans with a search box; **Open** loads one back
+  into the dialog, for example to take over an invoice scanned on a phone
+- **Earlier scans of this invoice...** (bottom left) appears when the same invoice was scanned
+  before, so it is not entered twice
 
 To scan files your application already has (for example from a scanner folder), set them
 before opening the dialog and it starts at once:
@@ -225,6 +234,9 @@ almost no CPU while idle.
 | `Shared IsSupportedFile(path) As Boolean` | `True` for jpg, jpeg, jpe, jfif, png, bmp, tif, tiff, webp, gif, pdf |
 | `Shared SupportedExtensions` / `FileDialogFilter` | The supported extensions, and a ready-made `OpenFileDialog.Filter` |
 | `ScanToFile(outputCsv, ParamArray files())` | Same, and saves the CSV (UTF-8 with BOM, opens correctly in Excel) |
+| `SaveCorrections(scanId, invoice) As Integer` | Sends the corrected invoice back to the server: saved in the history and used for learning. Returns how many item values were learned |
+| `GetRecentScans(limit, query) As List(Of VbOcrScanInfo)` | Recent scans, newest first. `query` searches supplier, GSTIN, invoice number and file name (`""` = all) |
+| `OpenScan(scanId) As VbOcrResult` | A saved scan, with the corrections saved for it |
 | `Shared ScanWithoutServer(installFolder, ParamArray files())` | Scans by running the command line instead of the server. Slower: the engine loads every time |
 
 All problems (server not running, not installed, file not found, scan failed) throw
@@ -248,6 +260,24 @@ All problems (server not running, not installed, file not found, scan failed) th
 | `TotalMismatch() As Boolean` | `True` when the two totals differ: a row is probably missing or misread |
 | `ScanId` | ID of the scan in the server's history |
 | `Source` | `"ocr"`, or `"pdf-text"` when read exactly from a digital PDF |
+| `SupplierGstin` | The supplier's GSTIN, `""` when not found. Checked with its check character |
+| `TotalNote` | Why the items do not add up to the printed total (GST, freight, discount found), `""` otherwise |
+| `Duplicates` | `List(Of VbOcrScanInfo)`: earlier scans of the same invoice (`Id`, `Scanned`). Empty when none |
+
+`VbOcrScanInfo` (from `GetRecentScans` and `Duplicates`): `Id`, `Scanned`, `SupplierName`,
+`SupplierGstin`, `InvoiceNumber`, `InvoiceDate`, `ItemCount`, `Amount`, `WarningCount`,
+`Corrected` (date, or `""`). `Duplicates` only fills `Id` and `Scanned`.
+
+Example: warn before entering an invoice twice, and save the user's corrections:
+
+```vb
+Dim result As VbOcrResult = client.Scan("C:\Scans\bill.jpg")
+If result.Duplicates.Count > 0 Then
+    MessageBox.Show("This invoice was already scanned on " & result.Duplicates(0).Scanned)
+End If
+' ... the user corrects result.Invoice in your own screen ...
+client.SaveCorrections(result.ScanId, result.Invoice)
+```
 
 Item rows in `UnsureCells` refer to the rows as returned. When you delete or reorder rows, map
 them first, as `VbOcrScanForm` does.
@@ -262,6 +292,8 @@ them first, as `VbOcrScanForm` does.
 | `HeaderTitles`, `ItemTitles` | The CSV titles, in order |
 | `Shared Parse(csv)` | CSV text → `VbOcrInvoice` |
 | `ToCsv()` | Back to CSV in the same layout, with the Total row recalculated. Use it after corrections or after filling GRN Number |
+| `ToJson(scanId)` | The invoice as JSON for the server's `/csv` (used by `SaveCorrections`) |
+| `Shared ReadCsvRows(csv) As List(Of String())` | Splits CSV text into rows and fields (quotes, commas and line breaks inside values handled) |
 | `Shared ToDecimal(value)` | `"1335.32"` → `1335.32D`. Always reads `.` as the decimal point, whatever the PC's regional settings. Empty → `0` |
 | `Shared TryToDate(value, ByRef result)` | `"03-01-2026"` → `DateTime`. Returns `False` when empty |
 

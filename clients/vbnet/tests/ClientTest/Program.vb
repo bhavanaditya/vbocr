@@ -53,6 +53,7 @@ Module Program
         Check("decimal under de-DE", VbOcrInvoice.ToDecimal(r.Invoice.Items.Rows(0)("Amount")) = 1335.32D)
         Check("total check mismatch", r.TotalCheck = "mismatch" AndAlso r.ItemsTotal = "4741.10" AndAlso r.PrintedTotal = "5743.10" AndAlso r.TotalMismatch())
         Check("scan id + source", r.ScanId.Length > 15 AndAlso r.Source = "ocr")
+        Check("supplier GSTIN", r.SupplierGstin = "29AAGCS1234K1Z7")
 
         Dim pdf As VbOcrResult = c.Scan(Path.Combine(source, "digital-invoice.pdf"))
         Check("digital pdf: exact text, total ok", pdf.Source = "pdf-text" AndAlso pdf.TotalCheck = "ok" AndAlso pdf.ItemCount = 3 AndAlso pdf.UnsureCells.Count = 0)
@@ -77,6 +78,27 @@ Module Program
         Dim missing() As VbOcrResult = c.ScanEach(Path.Combine(dir, "nope.png"), Path.Combine(dir, "readme.txt"))
         Check("ScanEach: missing file reported", missing(0).ErrorMessage.StartsWith("File not found"))
         Check("ScanEach: txt reported as unsupported", missing(1).ErrorMessage.StartsWith("Unsupported file type"))
+
+        ' Same invoice again: the earlier scans are listed.
+        Dim again As VbOcrResult = c.Scan(Path.Combine(dir, "a_bill.jpg"))
+        Check("duplicates listed", again.Duplicates.Count > 0 AndAlso again.Duplicates(0).Id.Length > 15 AndAlso again.Duplicates(0).Scanned.Length > 10)
+
+        ' Corrections made in the application go back to the server.
+        again.Invoice.Header("Supplier Name") = "Sample ""Garments"" \ Pvt Ltd"
+        ' A size not learned yet (the test may run against the same server more than once).
+        Dim newSize As String = If(CStr(again.Invoice.Items.Rows(0)("Size")) = "XL", "XXL", "XL")
+        again.Invoice.Items.Rows(0)("Size") = newSize
+        again.Invoice.Items.Rows(2).Delete()
+        Dim learned As Integer = c.SaveCorrections(again.ScanId, again.Invoice)
+        Check("SaveCorrections: item value remembered", learned >= 1)
+        Dim reopened As VbOcrResult = c.OpenScan(again.ScanId)
+        Check("OpenScan: corrections saved", CStr(reopened.Invoice.Items.Rows(0)("Size")) = newSize AndAlso reopened.ItemCount = 2 AndAlso reopened.ScanId = again.ScanId)
+        Check("OpenScan: quotes and backslash kept", reopened.Invoice.GetHeader("Supplier Name") = "Sample ""Garments"" \ Pvt Ltd")
+        Dim recent As System.Collections.Generic.List(Of VbOcrScanInfo) = c.GetRecentScans(5, "SG/25-26/0042")
+        Check("GetRecentScans", recent.Count > 0 AndAlso recent(0).Id = again.ScanId AndAlso recent(0).Corrected.Length > 0 AndAlso recent(0).SupplierGstin = "29AAGCS1234K1Z7")
+        Check("GetRecentScans: search", c.GetRecentScans(5, "no such invoice").Count = 0)
+        Dim nextScan As VbOcrResult = c.Scan(Path.Combine(dir, "a_bill.jpg"))
+        Check("learned value filled in next time", CStr(nextScan.Invoice.Items.Rows(0)("Size")) = newSize)
 
         Console.WriteLine(If(failures = 0, "ALL PASSED", failures.ToString() & " FAILED"))
         Return failures

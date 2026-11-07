@@ -8,6 +8,7 @@ import json
 from test_extractor import SAMPLE_SUPPLIER, garment_invoice, settings_with, w
 
 from vbocr.extractor import extract_invoice
+from vbocr.gstin import check_char
 from vbocr.history import History
 from vbocr.models import Invoice
 from vbocr.pdf import read_pdf
@@ -41,11 +42,15 @@ def make_pdf(path, lines, page_height=842):
     path.write_bytes(out)
 
 
+TEST_GSTIN = "29AAGCS1234K1Z" + check_char("29AAGCS1234K1Z")
+
+
 def invoice_pdf_lines(grand_total="4741.10"):
     """The garment invoice from test_extractor, as PDF text (coordinates in points)."""
     lines = [
         (130, 40, 10, "TAX INVOICE"),
         (50, 60, 16, "Sample Garments Pvt Ltd"),
+        (50, 82, 9, "GSTIN : " + TEST_GSTIN),
         (30, 110, 9, "Brand : Lumina"),
         (30, 130, 9, "Invoice No. : SG/25-26/0042"),
         (30, 145, 9, "Invoice Date : 05-02-2026"),
@@ -81,6 +86,7 @@ def test_pdf_text_layer_is_read_without_ocr(tmp_path):
     assert invoice.items[1]["mrp"] == "1199.00"
     assert invoice.total_check["status"] == "ok"
     assert invoice.unsure == []
+    assert invoice.supplier_gstin == TEST_GSTIN
 
 
 def test_pdf_without_text_is_rendered_for_ocr(tmp_path):
