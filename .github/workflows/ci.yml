@@ -107,6 +107,46 @@ jobs:
           Expand-Archive $zip diag -Force
           if (Select-String -Path diag\config\* -Pattern 'ci-key-123' -SimpleMatch) { throw "access key in the zip" }
 
+      - name: scan-folder.bat, watch-folder.bat, diagnostics.bat, start-server.bat
+        shell: pwsh
+        run: |
+          # scan-folder.bat: one CSV per invoice
+          New-Item -ItemType Directory sf, wf | Out-Null
+          Copy-Item test-files\a_bill.jpg, test-files\b_bill.png sf
+          cmd /c "scan-folder.bat sf -o sf-out < NUL"
+          $csv = Get-ChildItem sf-out -Filter *.csv
+          $csv.Name
+          if ($csv.Count -ne 2) { throw "scan-folder.bat: expected 2 CSV files" }
+
+          # watch-folder.bat: a file dropped in the folder is scanned and moved to done
+          $watch = Start-Process cmd -ArgumentList '/c', 'watch-folder.bat wf wf-out < NUL' -PassThru -WindowStyle Hidden
+          Start-Sleep 5
+          Copy-Item test-files\a_bill.jpg wf
+          $ok = $false
+          for ($i = 0; $i -lt 90 -and -not $ok; $i++) {
+            $ok = (Test-Path wf-out\a_bill.csv) -and (Test-Path wf\done\a_bill.jpg)
+            if (-not $ok) { Start-Sleep 2 }
+          }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr watch*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          if (-not $ok) { throw "watch-folder.bat did not scan the file" }
+          if (-not (Select-String -Path wf-out\a_bill.csv -Pattern 'SG/25-26/0042' -SimpleMatch -Quiet)) { throw "watch-folder.bat: wrong CSV" }
+
+          # diagnostics.bat: zip saved in logs
+          $out = cmd /c "diagnostics.bat < NUL"
+          $out
+          $zip = Get-ChildItem logs -Filter 'vbocr-diagnostics-*.zip'
+          if (-not $zip) { throw "diagnostics.bat saved no zip" }
+
+          # start-server.bat (passes its arguments on)
+          Start-Process cmd -ArgumentList '/c', 'start-server.bat --port 5088 < NUL' -WindowStyle Hidden
+          $ready = $false
+          for ($i = 0; $i -lt 90 -and -not $ready; $i++) {
+            try { $ready = (Invoke-RestMethod http://127.0.0.1:5088/health).status -eq 'ok' } catch {}
+            if (-not $ready) { Start-Sleep 2 }
+          }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5088*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          if (-not $ready) { throw "start-server.bat did not start the server" }
+
       - name: autostart-on.bat starts the server hidden (port 5000)
         shell: pwsh
         run: |
