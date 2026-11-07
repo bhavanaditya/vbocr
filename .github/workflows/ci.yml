@@ -162,6 +162,15 @@ jobs:
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5088*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
           if (-not $ready) { throw "start-server.bat did not start the server" }
 
+      - name: CSV open in Excel when scanning again
+        shell: pwsh
+        run: |
+          $excel = [IO.File]::Open((Resolve-Path test-files\a_bill.csv), 'Open', 'ReadWrite', 'Read')
+          cmd /c "scan.bat test-files\a_bill.jpg -o test-files\a_bill.csv < NUL"
+          $excel.Close()
+          if (-not (Test-Path "test-files\a_bill (2).csv")) { throw "the scan was lost because a_bill.csv was open" }
+          if (-not (Select-String -Path "test-files\a_bill (2).csv" -Pattern 'SG/25-26/0042' -SimpleMatch -Quiet)) { throw "wrong CSV" }
+
       - name: File and folder names with spaces and Indian / accented letters
         shell: pwsh
         run: |
@@ -194,6 +203,21 @@ jobs:
           $hist = Invoke-RestMethod "http://127.0.0.1:5099/history?limit=5" -Headers @{ 'X-API-Key' = 'ci-key-123' }
           $hist.scans | ForEach-Object { $_.files -join ', ' }
           if (-not ($hist.scans.files -match 'बिल')) { throw "history lost the file name" }
+          # Excel keeps the learned item list open (others may read it, not write): corrections still save
+          $scan = Invoke-RestMethod "http://127.0.0.1:5099/scan?format=json" -Method Post -Headers @{ 'X-API-Key' = 'ci-key-123' } `
+            -Form @{ files = Get-Item test-files\a_bill.jpg }
+          $learned = "config\item_master.learned.csv"
+          if (-not (Test-Path $learned)) { Set-Content $learned "SKU No./Item ID.,Size,Supplier" }
+          $excel = [IO.File]::Open((Resolve-Path $learned), 'Open', 'ReadWrite', 'Read')
+          $scan.items[0].size = 'XXXL'
+          $body = @{ scan_id = $scan.scan_id; header = $scan.header; items = $scan.items } | ConvertTo-Json -Depth 5
+          $r = Invoke-WebRequest http://127.0.0.1:5099/csv -Method Post -ContentType 'application/json' -Body $body -Headers @{ 'X-API-Key' = 'ci-key-123' }
+          $excel.Close()
+          "corrections with the learned list open: $($r.StatusCode) / $($r.Headers['X-VBOCR-Learn-Error'])"
+          if ($r.StatusCode -ne 200 -or -not $r.Headers['X-VBOCR-Learn-Error']) { throw "saving corrections failed while the learned list was open" }
+          $saved = Invoke-RestMethod "http://127.0.0.1:5099/history/$($scan.scan_id)" -Headers @{ 'X-API-Key' = 'ci-key-123' }
+          if ($saved.items[0].size -ne 'XXXL') { throw "the correction was not saved in the history" }
+
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5099*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
           if (Get-ChildItem $temp -Filter 'vbocr_*') { throw "temporary files left behind" }
 

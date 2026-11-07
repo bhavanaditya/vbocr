@@ -207,9 +207,7 @@ def _write_result(scanner, invoice, output: Optional[str], as_json: bool) -> int
     result = json.dumps(invoice.to_dict(), indent=2) if as_json else scanner.to_csv(invoice)
 
     if output:
-        # utf-8-sig so Excel opens the CSV with the right encoding
-        with open(output, "w", encoding="utf-8-sig", newline="") as handle:
-            handle.write(result)
+        output = _save_text(output, result)
         print("Saved {} ({} items)".format(output, len(invoice.items)), file=sys.stderr)
     else:
         sys.stdout.write(result)
@@ -217,6 +215,27 @@ def _write_result(scanner, invoice, output: Optional[str], as_json: bool) -> int
     for warning in invoice.warnings:
         print("WARNING: {}".format(warning), file=sys.stderr)
     return 0 if invoice.items else 1
+
+
+def _save_text(output: str, text: str) -> str:
+    """Write the CSV (utf-8-sig, so Excel shows the right letters). When the file is open in
+    Excel (Windows does not allow writing it then), save it as "bill (2).csv" instead of
+    losing the scan. Returns the file actually written."""
+    target = Path(output)
+    for attempt in range(1, 20):
+        candidate = target if attempt == 1 else target.with_name("{} ({}){}".format(target.stem, attempt, target.suffix))
+        if attempt > 1 and candidate.exists():
+            continue
+        try:
+            with open(candidate, "w", encoding="utf-8-sig", newline="") as handle:
+                handle.write(text)
+        except PermissionError:
+            continue
+        if attempt > 1:
+            print("NOTE: {} is open in another program (Excel?), so the result was saved as {}.".format(
+                target.name, candidate.name), file=sys.stderr)
+        return str(candidate)
+    raise PermissionError("Cannot write {}: it is open in another program (Excel?). Close it and scan again.".format(output))
 
 
 def expand_inputs(names: List[str]) -> Tuple[List[str], bool, List[str]]:

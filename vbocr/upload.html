@@ -562,7 +562,7 @@ function invoiceCard(inv, index, seconds) {
     save.onclick = async () => {
       try {
         await currentCsv(inv);
-        toast(inv.learned > 0 ? 'Corrections saved. ' + inv.learned + ' item value(s) remembered for next time' : 'Corrections saved in the scan history');
+        if (inv.learnError) toast(inv.learnError, true); else toast(inv.learned > 0 ? 'Corrections saved. ' + inv.learned + ' item value(s) remembered for next time' : 'Corrections saved in the scan history');
       } catch (e) { toast(e.message, true); }
     };
     savebar.appendChild(save);
@@ -692,6 +692,7 @@ async function currentCsv(inv) {
     body: JSON.stringify({header: inv.header, items: inv.items, supplier_profile: inv.supplier_profile || '', scan_id: inv.scan_id || inv.id || ''})});
   if (!r.ok) throw new Error(await errorText(r));
   inv.learned = +(r.headers.get('X-VBOCR-Learned') || 0);
+  inv.learnError = r.headers.get('X-VBOCR-Learn-Error') || '';
   inv.csv = await r.text(); inv.dirty = false;
   return inv.csv;
 }

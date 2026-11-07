@@ -180,14 +180,24 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             original = engine.history.update(scan_id, invoice, csv_text)
             master = settings.item_master
             if original is not None and master.get("learn", True) and master.get("learned_file"):
-                learned = item_master.learn(
-                    settings.resolve(master["learned_file"]),
-                    # file it under what the next scan will read: the GSTIN, or the name as read
-                    original.get("supplier_gstin") or (original.get("header") or {}).get("supplier_name", "")
-                    or invoice.header.get("supplier_name", ""),
-                    original.get("items") or [],
-                    invoice.items,
-                )
+                learned_file = settings.resolve(master["learned_file"])
+                try:
+                    learned = item_master.learn(
+                        learned_file,
+                        # file it under what the next scan will read: the GSTIN, or the name as read
+                        original.get("supplier_gstin") or (original.get("header") or {}).get("supplier_name", "")
+                        or invoice.header.get("supplier_name", ""),
+                        original.get("items") or [],
+                        invoice.items,
+                    )
+                except OSError as error:
+                    # Windows: the file is open in Excel. The corrections are saved; only the
+                    # remembering of item values is skipped this time.
+                    log.warning("Could not update %s (open in Excel?): %s", learned_file, error)
+                    learned = 0
+                    headers["X-VBOCR-Learn-Error"] = _latin1(
+                        "{} is open in another program (Excel?). Corrections are saved; item values were "
+                        "not remembered this time.".format(learned_file.name))
                 headers["X-VBOCR-Learned"] = str(learned)
         return Response(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
 

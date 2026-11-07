@@ -85,6 +85,17 @@ The server has `server.api_key` set. Enter the key in the browser page when it a
 `VbOcrClient.ApiKey` / `VbOcrScanForm.ApiKey` in the VB.NET app. The key is in
 `config\settings.local.yaml` on the server PC.
 
+### "bill (2).csv" was saved instead of bill.csv / "item values were not remembered"
+
+Windows does not let other programs write a file that is open in Excel. VB OCR then works around
+it instead of failing:
+
+- **Scanning again while the CSV is open in Excel:** the new result is saved as `bill (2).csv`
+  and the window says so. Close the old one in Excel and open the new file.
+- **`item_master.learned.csv` or `item_master.csv` open in Excel:** corrections are still saved
+  and the CSV is still made, but item values are not remembered that time. Close the file in
+  Excel; the next saved correction is remembered again.
+
 ### The phone cannot open the page from the QR code
 
 - The phone must be on the **same Wi-Fi** as the PC, not on mobile data or a guest network.
