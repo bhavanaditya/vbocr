@@ -9,10 +9,12 @@ C:\\Invoices\\Inbox. Every new file is scanned as a separate invoice:
 
 The scans also appear under "Recent scans" in the browser. A file is only taken once its size
 has stopped changing, so files still being copied or scanned are not read half-written.
+When a scanned file cannot be moved (another program still has it open, which is common on
+Windows), it is not scanned again: only the move is retried until it works.
 """
 
 import logging
-import shutil
+import os
 import threading
 import time
 from pathlib import Path
@@ -32,6 +34,8 @@ class FolderWatcher:
         self.failed = self.folder / "failed"
         self.interval = max(0.5, float(interval))
         self._sizes: Dict[Path, Tuple[int, float]] = {}
+        # scanned, but still to be moved: path -> (target folder, size and time when scanned)
+        self._unmoved: Dict[Path, Tuple[Path, Tuple[int, float]]] = {}
 
     def run_forever(self, stop: Optional[threading.Event] = None) -> None:
         stop = stop or threading.Event()
@@ -48,6 +52,7 @@ class FolderWatcher:
     def run_once(self) -> List[str]:
         """Scan the files that are ready. Returns the CSV files written."""
         written: List[str] = []
+        self._retry_moves()
         for path in self._ready_files():
             written.extend(self._process(path))
         return written
@@ -57,6 +62,8 @@ class FolderWatcher:
         seen = set()
         for path in sorted(self.folder.iterdir(), key=lambda p: p.name.lower()):
             if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS or path.name.startswith(("~", ".")):
+                continue
+            if path in self._unmoved:
                 continue
             seen.add(path)
             try:
@@ -71,14 +78,36 @@ class FolderWatcher:
             del self._sizes[gone]
         return ready
 
+    def _retry_moves(self) -> None:
+        for path, (folder, state) in list(self._unmoved.items()):
+            try:
+                stat = path.stat()
+            except OSError:
+                del self._unmoved[path]  # gone (moved or deleted by the user)
+                continue
+            if (stat.st_size, stat.st_mtime) != state:
+                del self._unmoved[path]  # replaced by a new file with the same name: scan it
+                continue
+            if _move(path, folder, quiet=True) is not None:
+                del self._unmoved[path]
+                log.info("Watch folder: %s moved to %s", path.name, folder.name)
+
+    def _move_or_remember(self, path: Path, folder: Path, state: Optional[Tuple[int, float]]) -> Optional[Path]:
+        target = _move(path, folder)
+        if target is None and state is not None and path.exists():
+            self._unmoved[path] = (folder, state)
+            log.warning("Watch folder: %s is still open in another program; it is not scanned again "
+                        "and will be moved to %s when it is closed", path.name, folder.name)
+        return target
+
     def _process(self, path: Path) -> List[str]:
-        self._sizes.pop(path, None)
+        state = self._sizes.pop(path, None)
         log.info("Watch folder: scanning %s", path.name)
         try:
             invoices = self.scanner.scan_separate(str(path), path.name)
         except Exception as error:  # noqa: BLE001
             log.warning("Watch folder: %s failed: %s", path.name, error)
-            target = _move(path, self.failed)
+            target = self._move_or_remember(path, self.failed, state)
             if target is not None:
                 target.with_name(target.name + ".error.txt").write_text(
                     "{}: {}\n".format(type(error).__name__, error), encoding="utf-8")
@@ -95,7 +124,7 @@ class FolderWatcher:
             written.append(str(csv_path))
             log.info("Watch folder: %s -> %s (%d items%s)", path.name, csv_path.name, len(invoice.items),
                      ", {} warning(s)".format(len(invoice.warnings)) if invoice.warnings else "")
-        _move(path, self.done)
+        self._move_or_remember(path, self.done, state)
         return written
 
 
@@ -108,14 +137,17 @@ def _free_name(path: Path) -> Path:
     return candidate
 
 
-def _move(path: Path, folder: Path) -> Optional[Path]:
+def _move(path: Path, folder: Path, quiet: bool = False) -> Optional[Path]:
     try:
         folder.mkdir(parents=True, exist_ok=True)
         target = _free_name(folder / path.name)
-        shutil.move(str(path), str(target))
+        # A rename, never copy + delete: a locked file must not leave a copy behind (done is
+        # inside the watched folder, so always on the same drive).
+        os.replace(str(path), str(target))
         return target
     except OSError as error:
-        log.warning("Could not move %s to %s: %s", path, folder, error)
+        if not quiet:
+            log.warning("Could not move %s to %s: %s", path, folder, error)
         return None
 
 

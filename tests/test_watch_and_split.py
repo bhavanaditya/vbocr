@@ -79,3 +79,45 @@ def test_watch_folder(tmp_path):
     watcher.run_once()
     watcher.run_once()
     assert (inbox / "csv" / "bills_1 (2).csv").exists() and (inbox / "done" / "bills (2).pdf").exists()
+
+
+def test_watch_folder_file_still_open_is_scanned_once(tmp_path, monkeypatch):
+    """Windows: the scanner program (or antivirus) still has the file open, so it cannot be
+    moved to done. It must not be scanned again and again; only the move is retried."""
+    import os
+
+    from vbocr import watcher as watcher_module
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    scanner = _scanner(tmp_path, [_with_number("SG/7")])
+    calls = []
+    real_scan = scanner.scan_separate
+    monkeypatch.setattr(scanner, "scan_separate", lambda *a: calls.append(a) or real_scan(*a))
+    locked = {"on": True}
+    real_replace = os.replace
+
+    def replace(src, dst):
+        if locked["on"] and src.endswith("bill.jpg"):
+            raise PermissionError(32, "The process cannot access the file because it is being used by another process")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(watcher_module.os, "replace", replace)
+    w = FolderWatcher(scanner, str(inbox))
+    (inbox / "bill.jpg").write_bytes(b"jpeg")
+    for _ in range(6):
+        w.run_once()
+    assert len(calls) == 1                                    # scanned once, not every 3 seconds
+    assert len(list((inbox / "csv").glob("*.csv"))) == 1
+    assert (inbox / "bill.jpg").exists()
+    assert not (inbox / "done").exists() or not list((inbox / "done").iterdir())  # no copy left behind
+
+    locked["on"] = False                                      # the other program closed it
+    w.run_once()
+    assert (inbox / "done" / "bill.jpg").exists() and not (inbox / "bill.jpg").exists()
+    assert len(calls) == 1
+
+    (inbox / "bill.jpg").write_bytes(b"new jpeg")             # a new file with the same name
+    w.run_once()
+    w.run_once()
+    assert len(calls) == 2

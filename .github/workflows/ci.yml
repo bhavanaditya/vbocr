@@ -127,6 +127,21 @@ jobs:
             $ok = (Test-Path wf-out\a_bill.csv) -and (Test-Path wf\done\a_bill.jpg)
             if (-not $ok) { Start-Sleep 2 }
           }
+          # a file another program keeps open (others may read, not move): scanned once, moved when closed
+          if ($ok) {
+            Copy-Item test-files\b_bill.png wf\locked.png
+            $handle = [IO.File]::Open((Resolve-Path wf\locked.png), 'Open', 'Read', 'Read')
+            for ($i = 0; $i -lt 60 -and -not (Test-Path wf-out\locked.csv); $i++) { Start-Sleep 2 }
+            Start-Sleep 20
+            $copies = @(Get-ChildItem wf-out -Filter 'locked*.csv').Count
+            "CSV files while the file was open: $copies"
+            $handle.Close()
+            for ($i = 0; $i -lt 30 -and -not (Test-Path wf\done\locked.png); $i++) { Start-Sleep 2 }
+            $moved = (Test-Path wf\done\locked.png) -and -not (Test-Path wf\locked.png)
+            $doneCopies = @(Get-ChildItem wf\done -Filter 'locked*').Count
+            if ($copies -ne 1) { $ok = $false; "scanned $copies times instead of once" }
+            if (-not $moved -or $doneCopies -ne 1) { $ok = $false; "not moved to done once after closing ($doneCopies)" }
+          }
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr watch*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
           if (-not $ok) { throw "watch-folder.bat did not scan the file" }
           if (-not (Select-String -Path wf-out\a_bill.csv -Pattern 'SG/25-26/0042' -SimpleMatch -Quiet)) { throw "watch-folder.bat: wrong CSV" }

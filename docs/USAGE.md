@@ -168,7 +168,9 @@ watch-folder.bat C:\Invoices\Inbox D:\Purchase\CSV
 | `Inbox\failed\bill.jpg` + `.error.txt` | a file that could not be read, and why |
 
 Each file is one invoice (a PDF with several invoices gives several CSVs). A file is taken only
-once it has stopped growing, so a scan that is still being saved is not read half-written. The
+once it has stopped growing, so a scan that is still being saved is not read half-written. When
+another program still has the file open (the scanner software, a picture viewer, antivirus), it is
+scanned once and moved to `done` as soon as that program lets go; it is not read again. The
 scans also appear under **Recent scans**. To watch while the server runs (no extra window), set
 `watch: folder:` in `config\settings.local.yaml` (see [CONFIGURATION.md](CONFIGURATION.md#watch)).
 
