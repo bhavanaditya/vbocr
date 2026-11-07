@@ -100,6 +100,20 @@ Module Program
         Dim nextScan As VbOcrResult = c.Scan(Path.Combine(dir, "a_bill.jpg"))
         Check("learned value filled in next time", CStr(nextScan.Invoice.Items.Rows(0)("Size")) = newSize)
 
+        ' ScanToFile while the CSV is open in Excel (Windows only: other systems do not lock files).
+        Dim target As String = Path.Combine(dir, "excel-open.csv")
+        Dim second As String = Path.Combine(dir, "excel-open (2).csv")
+        If File.Exists(second) Then File.Delete(second)
+        File.WriteAllText(target, "old")
+        Dim saved As VbOcrResult = c.ScanToFile(target, Path.Combine(dir, "a_bill.jpg"))
+        Check("ScanToFile: saved", saved.SavedFile = target AndAlso File.ReadAllText(target).Contains("SG/25-26/0042"))
+        If Environment.OSVersion.Platform = PlatformID.Win32NT Then
+            Using excel As New FileStream(target, FileMode.Open, FileAccess.ReadWrite, FileShare.Read)
+                saved = c.ScanToFile(target, Path.Combine(dir, "a_bill.jpg"))
+            End Using
+            Check("ScanToFile: file open in Excel -> saved as (2)", saved.SavedFile = second AndAlso File.Exists(second))
+        End If
+
         Console.WriteLine(If(failures = 0, "ALL PASSED", failures.ToString() & " FAILED"))
         Return failures
     End Function

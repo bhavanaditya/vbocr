@@ -233,7 +233,7 @@ almost no CPU while idle.
 | `Shared GetInvoiceFiles(folder) As String()` | All supported files in a folder, sorted by name |
 | `Shared IsSupportedFile(path) As Boolean` | `True` for jpg, jpeg, jpe, jfif, png, bmp, tif, tiff, webp, gif, pdf |
 | `Shared SupportedExtensions` / `FileDialogFilter` | The supported extensions, and a ready-made `OpenFileDialog.Filter` |
-| `ScanToFile(outputCsv, ParamArray files())` | Same, and saves the CSV (UTF-8 with BOM, opens correctly in Excel) |
+| `ScanToFile(outputCsv, ParamArray files())` | Same, and saves the CSV (UTF-8 with BOM, opens correctly in Excel). When that file is open in Excel, it saves `bill (2).csv` instead; `result.SavedFile` tells which |
 | `SaveCorrections(scanId, invoice) As Integer` | Sends the corrected invoice back to the server: saved in the history and used for learning. Returns how many item values were learned |
 | `GetRecentScans(limit, query) As List(Of VbOcrScanInfo)` | Recent scans, newest first. `query` searches supplier, GSTIN, invoice number and file name (`""` = all) |
 | `OpenScan(scanId) As VbOcrResult` | A saved scan, with the corrections saved for it |
@@ -263,6 +263,7 @@ All problems (server not running, not installed, file not found, scan failed) th
 | `SupplierGstin` | The supplier's GSTIN, `""` when not found. Checked with its check character |
 | `TotalNote` | Why the items do not add up to the printed total (GST, freight, discount found), `""` otherwise |
 | `Duplicates` | `List(Of VbOcrScanInfo)`: earlier scans of the same invoice (`Id`, `Scanned`). Empty when none |
+| `SavedFile` | `ScanToFile` only: the file the CSV was saved to (`bill (2).csv` when `bill.csv` was open in Excel) |
 
 `VbOcrScanInfo` (from `GetRecentScans` and `Duplicates`): `Id`, `Scanned`, `SupplierName`,
 `SupplierGstin`, `InvoiceNumber`, `InvoiceDate`, `ItemCount`, `Amount`, `WarningCount`,

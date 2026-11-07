@@ -23,7 +23,7 @@ Sl.No,SKU No./Item ID.,Article ID,Brand Name,Design Name,Size,Cup Size,Colour,Qu
 Total,,,,,,,,27.20,,,20046.40
 ```
 
-- Encoding: UTF-8. The command line and `ScanToFileAsync` add a BOM so Excel shows it correctly.
+- Encoding: UTF-8. The command line and `ScanToFile` add a BOM so Excel shows it correctly.
 - Line endings: CRLF (Windows).
 - Numbers: no thousands separators, decimals as printed (`1,199.00` → `1199.00`).
 - Dates: `dd-mm-yyyy` by default (`date_format` in `settings.yaml`).

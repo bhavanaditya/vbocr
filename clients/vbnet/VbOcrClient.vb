@@ -81,6 +81,9 @@ Public Class VbOcrResult
     ''' <summary>Earlier scans of the same invoice (same supplier and invoice number): only
     ''' Id and Scanned are set. Empty when this invoice is new.</summary>
     Public Duplicates As New List(Of VbOcrScanInfo)
+    ''' <summary>ScanToFile only: the file the CSV was saved to. Normally the file you gave; when
+    ''' that file is open in Excel, "bill (2).csv" next to it instead.</summary>
+    Public SavedFile As String = ""
 
     ''' <summary>True when the OCR was not sure about this value. row 0 = a header value,
     ''' 1 = first item row. title = CSV column title, e.g. "Quantity".</summary>
@@ -454,8 +457,32 @@ Public Class VbOcrClient
     ''' <summary>Scans and saves the CSV (UTF-8 with BOM, so Excel opens it correctly).</summary>
     Public Function ScanToFile(ByVal outputCsvPath As String, ByVal ParamArray filePaths() As String) As VbOcrResult
         Dim result As VbOcrResult = Scan(filePaths)
-        File.WriteAllText(outputCsvPath, result.Csv, New UTF8Encoding(True))
+        result.SavedFile = SaveText(outputCsvPath, result.Csv)
         Return result
+    End Function
+
+    ' Windows does not allow writing a file that is open in Excel: then save as "bill (2).csv"
+    ' instead of losing the scan. Returns the file written.
+    Private Shared Function SaveText(ByVal target As String, ByVal text As String) As String
+        Dim folder As String = Path.GetDirectoryName(Path.GetFullPath(target))
+        Dim stem As String = Path.GetFileNameWithoutExtension(target)
+        Dim extension As String = Path.GetExtension(target)
+        If Not Directory.Exists(folder) Then Throw New VbOcrException("Cannot save " & target & ": the folder " & folder & " does not exist.")
+        For attempt As Integer = 1 To 19
+            Dim candidate As String = target
+            If attempt > 1 Then
+                candidate = Path.Combine(folder, stem & " (" & attempt.ToString(CultureInfo.InvariantCulture) & ")" & extension)
+                If File.Exists(candidate) Then Continue For
+            End If
+            Try
+                File.WriteAllText(candidate, text, New UTF8Encoding(True))
+                Return candidate
+            Catch ex As IOException
+            Catch ex As UnauthorizedAccessException
+                If attempt = 1 AndAlso Not File.Exists(target) Then Throw New VbOcrException("Cannot save " & target & ": " & ex.Message)
+            End Try
+        Next
+        Throw New VbOcrException("Cannot save " & target & ": it is open in another program (Excel?). Close it and scan again.")
     End Function
 
     ''' <summary>Scans without the server by running the command line. Slower (the OCR engine
