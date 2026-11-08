@@ -227,7 +227,8 @@ almost no CPU while idle.
 | `TimeoutSeconds` | Maximum time for one scan, default 300 |
 | `ApiKey` | Access key, when the server has `server.api_key` set. Default `""` |
 | `IsReady() As Boolean` | `True` when the server is running and ready |
-| `EnsureServerRunning(installFolder [, timeoutSeconds])` | Starts the server hidden if needed and waits until it is ready (default 120 s). Local server only |
+| `EnsureServerRunning(installFolder [, timeoutSeconds])` | Starts the server hidden if needed and waits until it is ready (default 120 s). Local server only. Returns `False` at once when the server stops right after starting |
+| `Shared LastStartError` | Why `EnsureServerRunning` returned `False`, in the server's words (e.g. "Port 5000 is used by another program …"), or `""` |
 | `Scan(ParamArray files()) As VbOcrResult` | Scans one invoice. Several files = several pages |
 | `ScanEach(ParamArray files()) As VbOcrResult()` | Scans every file as a **separate** invoice. One result per file; a file that fails sets `ErrorMessage` instead of throwing |
 | `Shared GetInvoiceFiles(folder) As String()` | All supported files in a folder, sorted by name |

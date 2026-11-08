@@ -80,6 +80,7 @@ jobs:
             if (-not $ready) { Start-Sleep 2 }
           }
           if (-not $ready) { Get-Content server.log -Tail 50; exit 1 }
+          $env:VBOCR_INSTALL = (Get-Location).Path
           dotnet run --project clients/vbnet/tests/ClientTest -- http://127.0.0.1:5077 test-files ci-key-123
           if ($LASTEXITCODE -ne 0) { Get-Content server.log -Tail 50; exit 1 }
           dotnet run --project clients/vbnet/tests/DialogTest -- http://127.0.0.1:5077 test-files ci-key-123 dialog-screenshots

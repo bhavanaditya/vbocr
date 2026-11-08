@@ -1067,6 +1067,9 @@ Public Class VbOcrScanForm
                 Throw New VbOcrException("The VB OCR server at " & ServerUrl & " is not running.")
             End If
             If Not client.EnsureServerRunning(InstallFolder) Then
+                If VbOcrClient.LastStartError.Length > 0 Then
+                    Throw New VbOcrException("The VB OCR server did not start: " & VbOcrClient.LastStartError)
+                End If
                 Throw New VbOcrException("The VB OCR server did not start. Run " & InstallFolder & "\start-server.bat to see the error.")
             End If
         End If

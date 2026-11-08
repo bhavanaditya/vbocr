@@ -114,6 +114,23 @@ Module Program
             Check("ScanToFile: file open in Excel -> saved as (2)", saved.SavedFile = second AndAlso File.Exists(second))
         End If
 
+        ' EnsureServerRunning when port 5000 is used by another program: False quickly, with the reason.
+        Dim install As String = Environment.GetEnvironmentVariable("VBOCR_INSTALL")
+        If Not String.IsNullOrEmpty(install) AndAlso Environment.OSVersion.Platform = PlatformID.Win32NT Then
+            Dim other As New System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 5000)
+            other.Start()
+            Try
+                Dim started As DateTime = DateTime.Now
+                Dim up As Boolean = New VbOcrClient("http://127.0.0.1:5000").EnsureServerRunning(install, 120)
+                Dim seconds As Double = DateTime.Now.Subtract(started).TotalSeconds
+                Console.WriteLine("  EnsureServerRunning with port 5000 taken: " & up.ToString() & " after " & CInt(seconds).ToString() & " s: " & VbOcrClient.LastStartError)
+                Check("EnsureServerRunning: port taken -> False at once, with the reason", _
+                    Not up AndAlso seconds < 60 AndAlso VbOcrClient.LastStartError.Contains("used by another program"))
+            Finally
+                other.Stop()
+            End Try
+        End If
+
         Console.WriteLine(If(failures = 0, "ALL PASSED", failures.ToString() & " FAILED"))
         Return failures
     End Function

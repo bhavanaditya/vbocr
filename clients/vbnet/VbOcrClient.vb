@@ -176,6 +176,16 @@ Public Class VbOcrClient
 
     Private Shared ReadOnly StartLock As New Object()
     Private Shared _lastStart As DateTime = DateTime.MinValue
+    Private Shared _started As Process
+    Private Shared _lastStartError As String = ""
+
+    ''' <summary>Why the last EnsureServerRunning returned False, when the server said so (for
+    ''' example "Port 5000 is used by another program ..."), else "".</summary>
+    Public Shared ReadOnly Property LastStartError() As String
+        Get
+            Return _lastStartError
+        End Get
+    End Property
 
     Private ReadOnly _baseUrl As String
     Private _timeoutSeconds As Integer = 300
@@ -237,24 +247,71 @@ Public Class VbOcrClient
             Throw New VbOcrException("VB OCR is not installed in " & installFolder & ". Run install.bat first.")
         End If
 
+        ' Without a console the server writes to logs\server.log: remember where this start begins.
+        Dim logFile As String = Path.Combine(Path.Combine(installFolder, "logs"), "server.log")
+        Dim logStart As Long = 0
+        Dim started As Process
         SyncLock StartLock
             ' Do not start a second copy while the first one is still loading.
             If DateTime.Now.Subtract(_lastStart).TotalSeconds > timeoutSeconds Then
+                If File.Exists(logFile) Then logStart = New FileInfo(logFile).Length
                 Dim info As New ProcessStartInfo(pythonw, "-m vbocr serve")
                 info.WorkingDirectory = installFolder
                 info.UseShellExecute = False
                 info.CreateNoWindow = True
-                Process.Start(info)
+                _started = Process.Start(info)
                 _lastStart = DateTime.Now
+                _lastStartError = ""
             End If
+            started = _started
         End SyncLock
 
         Dim deadline As DateTime = DateTime.Now.AddSeconds(timeoutSeconds)
         Do While DateTime.Now < deadline
             Thread.Sleep(1000)
             If IsReady() Then Return True
+            ' Stopped at once (port used by another program, broken install, ...): do not wait
+            ' the full time, and say why.
+            If started IsNot Nothing AndAlso HasExited(started) Then
+                If IsReady() Then Return True
+                _lastStartError = LastLogLine(logFile, logStart)
+                If _lastStartError.Length = 0 Then _lastStartError = "The VB OCR server stopped right after starting. Run start-server.bat in " & installFolder & " to see the error."
+                SyncLock StartLock
+                    _lastStart = DateTime.MinValue   ' allow a new start next time
+                End SyncLock
+                Return False
+            End If
         Loop
         Return False
+    End Function
+
+    Private Shared Function HasExited(ByVal process As Process) As Boolean
+        Try
+            Return process.HasExited
+        Catch ex As InvalidOperationException
+            Return False
+        Catch ex As System.ComponentModel.Win32Exception
+            Return False
+        End Try
+    End Function
+
+    ' The last line the server wrote to its log after the given position (its error message).
+    Private Shared Function LastLogLine(ByVal logFile As String, ByVal fromPosition As Long) As String
+        Try
+            If Not File.Exists(logFile) Then Return ""
+            Using stream As New FileStream(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete)
+                If fromPosition > stream.Length Then fromPosition = 0
+                stream.Position = fromPosition
+                Dim text As String = New StreamReader(stream, Encoding.UTF8).ReadToEnd()
+                Dim lines() As String = text.Split(New Char() {ControlChars.Cr, ControlChars.Lf}, StringSplitOptions.RemoveEmptyEntries)
+                For i As Integer = lines.Length - 1 To 0 Step -1
+                    If lines(i).Trim().Length > 0 Then Return lines(i).Trim()
+                Next
+            End Using
+        Catch ex As IOException
+        Catch ex As UnauthorizedAccessException
+        End Try
+        Return ""
     End Function
 
     ''' <summary>File types the server accepts (lower case, with dot).</summary>
