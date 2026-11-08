@@ -159,8 +159,25 @@ jobs:
             try { $ready = (Invoke-RestMethod http://127.0.0.1:5088/health).status -eq 'ok' } catch {}
             if (-not $ready) { Start-Sleep 2 }
           }
+          # a second start on the same port: told at once that VB OCR already runs (no 20 s engine load)
+          if ($ready) {
+            $t = Get-Date
+            $second = .venv\Scripts\python.exe -m vbocr serve --port 5088 2>&1 | Out-String
+            $code = $LASTEXITCODE; $secs = ((Get-Date) - $t).TotalSeconds
+            "second start: exit $code after $([int]$secs) s: $second"
+            if ($code -ne 0 -or $second -notmatch 'already running' -or $secs -gt 15) { $ready = $false; "second start not handled" }
+          }
           Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5088*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
           if (-not $ready) { throw "start-server.bat did not start the server" }
+
+          # port taken by another program: clear message, exit code 2, fast
+          $other = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 5097); $other.Start()
+          $t = Get-Date
+          $msg = .venv\Scripts\python.exe -m vbocr serve --port 5097 2>&1 | Out-String
+          $code = $LASTEXITCODE; $secs = ((Get-Date) - $t).TotalSeconds
+          $other.Stop()
+          "busy port: exit $code after $([int]$secs) s: $msg"
+          if ($code -ne 2 -or $msg -notmatch 'used by another program' -or $secs -gt 15) { throw "busy port not reported clearly" }
 
       - name: CSV open in Excel when scanning again
         shell: pwsh
@@ -260,6 +277,22 @@ jobs:
       VBOCR_YES: "1"
     steps:
       - uses: actions/checkout@v5
+      - name: install.bat in a folder whose path is too long (long paths off)
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+          $before = (Get-ItemProperty $key -Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled
+          Set-ItemProperty $key -Name LongPathsEnabled -Value 0
+          $deep = "D:\Users\Shop Owner\OneDrive - Sri Lakshmi Textiles Pvt Ltd\Downloads\vbocr-main (1)\vbocr-main"
+          New-Item -ItemType Directory $deep -Force | Out-Null
+          Copy-Item install.bat $deep
+          $out = cmd /c "`"$deep\install.bat`" < NUL" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Set-ItemProperty $key -Name LongPathsEnabled -Value ([int]$before)
+          $out
+          if ($code -ne 1 -or $out -notmatch 'too long') { throw "long folder path not reported" }
+          if (Test-Path "$deep\.venv") { throw "it went on installing" }
+
       - name: install.bat with no Python on the PC, in a folder with spaces
         shell: pwsh
         run: |

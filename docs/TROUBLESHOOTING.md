@@ -23,9 +23,18 @@ set HTTPS_PROXY=http://proxy.company.local:8080
 install.bat
 ```
 
-### "Filename too long" / path errors
+### "The path of this folder is too long" / "Filename too long"
 
-Move the folder to a short path such as `C:\vbocr`.
+Windows limits file paths to 260 characters, and the OCR packages have very deep file names, so
+VB OCR's folder path must be at most about 95 characters. A ZIP extracted from Downloads
+often ends up as `C:\Users\<name>\Downloads\vbocr-main\vbocr-main`, inside OneDrive even longer.
+
+Move the folder to a short path such as `C:\vbocr` and run `install.bat` again. Or switch on
+Windows long paths (Command Prompt **as Administrator**, then restart the PC):
+
+```bat
+reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
+```
 
 ### Model download fails during `vbocr setup`
 
@@ -49,10 +58,11 @@ Ryzen from the last 10 years).
 Install the **Microsoft Visual C++ Redistributable (x64)**:
 <https://aka.ms/vs/17/release/vc_redist.x64.exe>, then restart the PC.
 
-### "Address already in use" / port 5000 busy
+### "VB OCR is already running" / "Port 5000 is used by another program"
 
-Another program is using port 5000, or the server is already running (for example started by
-the VB.NET app or Task Scheduler). Either stop the other copy, or change `server.port` in
+The server checks its port before loading the OCR engine. "Already running" means VB OCR was
+started before (autostart, the VB.NET application or another window): just open the address it
+shows. Otherwise another program is using port 5000. Either stop the other copy, or change `server.port` in
 `config\settings.yaml` and use the same port in `New VbOcrClient("http://127.0.0.1:5001")`.
 
 ### `EnsureServerRunning` returns False / "The VB OCR server did not start"

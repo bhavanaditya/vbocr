@@ -8,6 +8,12 @@ rem Started from PowerShell 7 (e.g. Windows Terminal): its module path would sto
 rem Windows PowerShell used below from loading its own modules (signature check).
 set "PSModulePath="
 
+rem Windows limits paths to 260 characters unless "long paths" are switched on. The OCR packages
+rem have very deep file names, so the install fails half-way in a long folder: check first.
+set "VBOCR_DIR=%~dp0"
+powershell -NoProfile -Command "$on = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled -eq 1; if ($env:VBOCR_DIR.Length -gt 95 -and -not $on) { exit 3 } else { exit 0 }"
+if errorlevel 3 goto :path_too_long
+
 set "PY="
 for %%V in (3.11 3.12 3.13 3.10) do (
     if not defined PY (
@@ -55,6 +61,15 @@ exit /b 0
 :failed
 echo.
 echo [ERROR] Installation failed. See docs\TROUBLESHOOTING.md
+exit /b 1
+
+rem ---------------------------------------------------------------------------
+:path_too_long
+echo.
+echo [ERROR] The path of this folder is too long for the OCR packages:
+echo         %~dp0
+echo         Move the VB OCR folder to a short path such as C:\vbocr and run install.bat there.
+echo         Or switch on Windows long paths: see docs\TROUBLESHOOTING.md.
 exit /b 1
 
 rem ---------------------------------------------------------------------------

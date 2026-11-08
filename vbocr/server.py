@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 import zipfile
 from contextlib import asynccontextmanager
@@ -408,4 +409,38 @@ def run(settings: Settings, host: Optional[str] = None, port: Optional[int] = No
             "network can scan and see the scan history. Set server.api_key in %s.",
             host, settings.local_settings_path,
         )
+    problem = port_problem(host, port)
+    if problem:
+        already = problem.startswith("VB OCR is already running")
+        (log.info if already else log.error)(problem)
+        print(problem, file=sys.stderr)
+        raise SystemExit(0 if already else 2)
     uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
+
+
+def port_problem(host: str, port: int) -> str:
+    """Checked before the OCR engine loads (20 s), so a busy port is reported at once and
+    clearly: VB OCR already running there (autostart, the VB.NET app), or another program."""
+    import socket
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:{}/health".format(port), timeout=2) as response:
+            if b'"version"' in response.read(2000):
+                return ("VB OCR is already running at http://127.0.0.1:{}/ (started by autostart, the "
+                        "VB.NET application or another window). Open that address in the browser.".format(port))
+    except Exception:  # noqa: BLE001 - nothing there, or not VB OCR
+        pass
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    probe = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):  # Windows: really exclusive, like the server
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        probe.bind((host, port))
+    except OSError as error:
+        return ("Port {} is used by another program ({}). Close that program, or set server.port to "
+                "another number (e.g. 5001) in config\\settings.local.yaml and use the same port in the "
+                "VB.NET application.".format(port, error.strerror or error))
+    finally:
+        probe.close()
+    return ""
