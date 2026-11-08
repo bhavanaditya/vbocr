@@ -143,7 +143,7 @@ jobs:
             if ($copies -ne 1) { $ok = $false; "scanned $copies times instead of once" }
             if (-not $moved -or $doneCopies -ne 1) { $ok = $false; "not moved to done once after closing ($doneCopies)" }
           }
-          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr watch*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr watch*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           if (-not $ok) { throw "watch-folder.bat did not scan the file" }
           if (-not (Select-String -Path wf-out\a_bill.csv -Pattern 'SG/25-26/0042' -SimpleMatch -Quiet)) { throw "watch-folder.bat: wrong CSV" }
 
@@ -168,7 +168,7 @@ jobs:
             "second start: exit $code after $([int]$secs) s: $second"
             if ($code -ne 0 -or $second -notmatch 'already running' -or $secs -gt 15) { $ready = $false; "second start not handled" }
           }
-          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5088*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5088*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           if (-not $ready) { throw "start-server.bat did not start the server" }
 
           # port taken by another program: clear message, exit code 2, fast
@@ -237,7 +237,7 @@ jobs:
           $saved = Invoke-RestMethod "http://127.0.0.1:5099/history/$($scan.scan_id)" -Headers @{ 'X-API-Key' = 'ci-key-123' }
           if ($saved.items[0].size -ne 'XXXL') { throw "the correction was not saved in the history" }
 
-          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5099*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve --port 5099*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           if (Get-ChildItem $temp -Filter 'vbocr_*') { throw "temporary files left behind" }
 
       - name: autostart-on.bat starts the server hidden (port 5000)
@@ -333,7 +333,7 @@ jobs:
             if (-not $ready) { Start-Sleep 2 }
           }
           cmd /c "autostart-off.bat < NUL"
-          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr serve*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*vbocr serve*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           if (-not $ready) { if (Test-Path logs\server.log) { Get-Content logs\server.log -Tail 30 }; throw "autostart did not start the server from this folder" }
           if (Test-Path $vbs) { throw "autostart-off.bat left the script" }
           exit 0

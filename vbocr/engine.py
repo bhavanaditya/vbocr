@@ -11,11 +11,26 @@ from .models import Page, Word
 
 log = logging.getLogger(__name__)
 
-# Keep the models inside the install folder (not the user profile), so the server works
-# for every Windows user on the PC and offline. Must be set before paddleocr is imported.
+
+def model_folder(install_folder: Path, windows: bool, program_data: Optional[str]) -> Path:
+    """Where the OCR models are kept: inside the install folder (not the user profile), so the
+    server works for every Windows user on the PC and offline.
+
+    PaddlePaddle cannot read model files from a path with non-English letters on Windows
+    (D:\\Büro\\vbocr, C:\\Users\\Rāj\\vbocr: "json parse error ... empty input"). Then the
+    models go to C:\\ProgramData\\VB OCR\\models instead, which every user can use too."""
+    default = install_folder / "models"
+    if windows and not str(default).isascii():
+        base = program_data or "C:\\ProgramData"
+        if base.isascii():
+            return type(default)(base) / "VB OCR" / "models"
+    return default
+
+
+# Must be set before paddleocr is imported.
 os.environ.setdefault(
     "PADDLE_PDX_CACHE_HOME",
-    str(Path(__file__).resolve().parent.parent / "models"),
+    str(model_folder(Path(__file__).resolve().parent.parent, os.name == "nt", os.environ.get("ProgramData"))),
 )
 # Skip PaddleX's online model-host check on every start; models are cached locally.
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")

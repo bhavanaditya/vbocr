@@ -36,6 +36,12 @@ Windows long paths (Command Prompt **as Administrator**, then restart the PC):
 reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
 ```
 
+### Folder path with non-English letters (`D:\Büro\vbocr`)
+
+The OCR library cannot read its model files from such a path on Windows ("json parse error ...
+empty input"). VB OCR then keeps the models in `C:\ProgramData\VB OCR\models` instead, which
+every user on the PC can use. Nothing to do; the folder itself works normally.
+
 ### Model download fails during `vbocr setup`
 
 The models are downloaded from Hugging Face by default. If that site is blocked, use the

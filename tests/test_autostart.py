@@ -23,3 +23,13 @@ def test_trailing_backslash_and_overwrite(tmp_path):
     autostart.enable(Path("C:\\vbocr\\"), tmp_path)
     target = autostart.enable(Path("C:\\vbocr"), tmp_path)
     assert 'shell.CurrentDirectory = "C:\\vbocr"' in target.read_bytes().decode("utf-16")
+
+
+def test_models_outside_a_folder_with_non_english_letters():
+    from pathlib import PureWindowsPath
+
+    from vbocr.engine import model_folder
+
+    assert model_folder(PureWindowsPath("C:\\vbocr"), True, "C:\\ProgramData") == PureWindowsPath("C:\\vbocr\\models")
+    assert model_folder(PureWindowsPath("D:\\VB OCR ü"), True, "C:\\ProgramData") == PureWindowsPath("C:\\ProgramData\\VB OCR\\models")
+    assert model_folder(PureWindowsPath("D:\\VB OCR ü"), False, None) == PureWindowsPath("D:\\VB OCR ü\\models")  # not Windows
