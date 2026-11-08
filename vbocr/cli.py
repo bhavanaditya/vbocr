@@ -76,6 +76,9 @@ def main(argv=None) -> int:
 
     sub.add_parser("setup", help="Download the OCR models now (needs internet once)")
 
+    sub.add_parser("autostart", help="Write the script that starts the server hidden at Windows log-on "
+                   "(used by autostart-on.bat)")
+
     diag = sub.add_parser(
         "diagnostics",
         help="Save a zip with logs, settings (keys removed) and versions, to send when asking for help",
@@ -109,6 +112,12 @@ def _run(args) -> int:
         if engine.mkldnn_fallback:
             _save_mkldnn_off(settings.local_settings_path)
         print("OCR models are ready (test read {} lines).".format(lines), file=sys.stderr)
+        return 0
+
+    if args.command == "autostart":
+        from . import autostart
+
+        print("Written: {}".format(autostart.enable()), file=sys.stderr)
         return 0
 
     if args.command == "diagnostics":

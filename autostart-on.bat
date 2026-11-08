@@ -9,9 +9,13 @@ if not exist ".venv\Scripts\pythonw.exe" (
     exit /b 1
 )
 set "VBS=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\VB OCR server.vbs"
-> "%VBS%" echo Set shell = CreateObject("WScript.Shell")
->> "%VBS%" echo shell.CurrentDirectory = "%~dp0"
->> "%VBS%" echo shell.Run """%~dp0.venv\Scripts\pythonw.exe"" -m vbocr serve", 0, False
+rem Written by Python (UTF-16), so any letters in the folder path work.
+".venv\Scripts\python.exe" -m vbocr autostart
+if errorlevel 1 (
+    echo Could not set up the start at log-on.
+    pause
+    exit /b 1
+)
 echo VB OCR will start hidden when you log on to Windows.
 echo Starting it now...
 wscript "%VBS%"
