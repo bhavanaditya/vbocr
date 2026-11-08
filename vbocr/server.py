@@ -411,10 +411,8 @@ def run(settings: Settings, host: Optional[str] = None, port: Optional[int] = No
         )
     problem = port_problem(host, port)
     if problem:
-        already = problem.startswith("VB OCR is already running")
-        (log.info if already else log.error)(problem)
-        print(problem, file=sys.stderr)
-        raise SystemExit(0 if already else 2)
+        print(problem, file=sys.stderr)  # without a console this goes to logs/server.log
+        raise SystemExit(0 if problem.startswith("VB OCR is already running") else 2)
     uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
 
 

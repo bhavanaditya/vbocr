@@ -178,6 +178,7 @@ jobs:
           $other.Stop()
           "busy port: exit $code after $([int]$secs) s: $msg"
           if ($code -ne 2 -or $msg -notmatch 'used by another program' -or $secs -gt 15) { throw "busy port not reported clearly" }
+          exit 0   # the expected non-zero exit codes above are not a failure of this step
 
       - name: CSV open in Excel when scanning again
         shell: pwsh
@@ -292,6 +293,7 @@ jobs:
           $out
           if ($code -ne 1 -or $out -notmatch 'too long') { throw "long folder path not reported" }
           if (Test-Path "$deep\.venv") { throw "it went on installing" }
+          exit 0   # the expected non-zero exit codes above are not a failure of this step
 
       - name: install.bat with no Python on the PC, in a folder with spaces
         shell: pwsh
