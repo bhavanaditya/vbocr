@@ -327,8 +327,8 @@ async function checkHealth() {
     const d = await r.json();
     keyRequired = !!d.key_required;
     if (d.status === 'ok') { state = 'ok'; text = 'Ready · v' + d.version + (d.key_required ? ' · 🔒' : ''); }
-    if (d.check_updates && !updateChecked) { updateChecked = true; checkForUpdate(d.version); }
     else { state = 'loading'; text = 'Loading OCR…'; }
+    if (d.check_updates && !updateChecked) { updateChecked = true; checkForUpdate(d.version); }
   } catch (e) { /* offline */ }
   $('health').className = 'pill ' + state;
   $('healthText').textContent = text;
