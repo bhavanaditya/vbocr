@@ -22,11 +22,12 @@ There are three ways to scan invoices:
 
 | How | Browser page | VB.NET dialog | Command line |
 |---|---|---|---|
-| Choose one or more files | **Files** | **Files...** | `scan.bat a.jpg b.png` |
+| Choose one or more files | **Files** (hold Ctrl or Shift to pick several) | **Files...** (hold Ctrl or Shift) | `scan.bat a.jpg b.png` |
 | A whole folder | **Folder** or drop the folder | **Folder...** or drop the folder | `scan.bat C:\Invoices` or `scan-folder.bat C:\Invoices` |
 | Drag and drop | Drop anywhere on the page | Drop on the page list or the dashed box | Drop files on `scan.bat` in Explorer |
 | Paste from the clipboard (screenshot, image copied from WhatsApp / browser) | Ctrl+V | **Paste** button or Ctrl+V | — |
-| Phone camera | **Camera** (when the page is opened on a phone on the same network) | — | — |
+| Phone gallery | **Photos** (on a phone or tablet: tap several pictures, then Add / Done) | — | — |
+| Phone camera | **Camera** (when the page is opened on a phone on the same network; one page per photo) | — | — |
 | Wildcards | — | — | `scan.bat "C:\Invoices\*.png" --each` |
 
 **One invoice or many?** Several files can mean two things:
@@ -84,7 +85,8 @@ and the program versions. Send it when asking for help. It contains no invoices.
 ### Scan with a phone
 
 Click **Phone** (top right). The page shows a QR code: point the phone camera at it and tap the
-link. The phone opens the same page; tap **Camera**, photograph each page and tap **Scan**.
+link. The phone opens the same page; tap **Camera** and photograph a page (tap **Camera** again for
+each next page), or tap **Photos** to pick several pictures from the gallery at once. Then tap **Scan**.
 The result also appears on the PC under **Recent scans**.
 
 - The phone must be on the same Wi-Fi as the PC.

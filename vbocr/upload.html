@@ -67,6 +67,10 @@ kbd{font-family:var(--mono);font-size:11.5px;padding:1px 5px;border:1px solid va
 .btn.big{width:100%;padding:12px;font-size:15px;border-radius:10px}
 .btn.small{padding:5px 10px;font-size:12.5px}
 input[type=file]{display:none}
+/* phones / tablets: Photos opens the gallery (pick several), Folder does not work there */
+.touch-only{display:none}
+.drop .tip{margin:10px 0 0;font-size:12px}
+@media (pointer:coarse){label.touch-only{display:inline-flex}p.touch-only,h3.touch-only{display:block}.mouse-only{display:none}}
 
 /* Page list */
 .listhead{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12.5px}
@@ -199,13 +203,18 @@ tr:hover .rowdel{opacity:1}
     <div class="step"><i>1</i>Add invoice pages</div>
     <div id="drop" class="drop">
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
-      <h3>Drop files or a folder here</h3>
-      <p>or paste a screenshot with <kbd>Ctrl</kbd>+<kbd>V</kbd></p>
+      <h3 class="mouse-only">Drop files or a folder here</h3>
+      <p class="mouse-only">or paste a screenshot with <kbd>Ctrl</kbd>+<kbd>V</kbd></p>
+      <h3 class="touch-only">Add the invoice pages</h3>
+      <p class="touch-only">from your photos, files or the camera</p>
       <div class="btnrow">
         <label class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Files<input id="pickFiles" type="file" multiple accept="image/*,.pdf,.tif,.tiff"></label>
-        <label class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Folder<input id="pickFolder" type="file" webkitdirectory multiple></label>
+        <label class="btn touch-only"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>Photos<input id="pickPhotos" type="file" multiple accept="image/*"></label>
+        <label class="btn mouse-only"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Folder<input id="pickFolder" type="file" webkitdirectory multiple></label>
         <label class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Camera<input id="pickCamera" type="file" accept="image/*" capture="environment"></label>
       </div>
+      <p class="tip mouse-only">To pick several files, hold <kbd>Ctrl</kbd> (or <kbd>Shift</kbd>) while you click them, or press <kbd>Ctrl</kbd>+<kbd>A</kbd> in the folder.</p>
+      <p class="tip touch-only">Photos: tap several pictures, then Add / Done. Files: press and hold the first file, then tap the others. Camera: one page per photo, tap it again for the next page.</p>
     </div>
 
     <div class="listhead"><span id="listCount">No pages yet</span><button id="clear" class="linkbtn hidden" type="button">Clear all</button></div>
@@ -417,7 +426,11 @@ function render() {
   if (!busy) { $('scan').disabled = !n; $('scanText').textContent = n ? (mode === 'pages' ? 'Scan ' + n + ' page' + (n === 1 ? '' : 's') : 'Scan ' + n + ' invoice' + (n === 1 ? '' : 's')) : 'Scan'; }
 }
 
-for (const id of ['pickFiles', 'pickFolder', 'pickCamera']) $(id).onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+for (const id of ['pickFiles', 'pickPhotos', 'pickFolder', 'pickCamera']) $(id).onchange = e => {
+  const before = pages.length;
+  addFiles(e.target.files); e.target.value = '';
+  if (id === 'pickCamera' && pages.length > before) toast('Page ' + pages.length + ' added. Tap Camera again for the next page.');
+};
 $('clear').onclick = () => { pages.forEach(p => p.url && URL.revokeObjectURL(p.url)); pages = []; render(); };
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
   mode = b.dataset.mode;
